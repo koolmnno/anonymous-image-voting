@@ -545,23 +545,49 @@
         return value ? String(value).trim() : fallback;
       }
 
+      function toSimplifiedRegionName(value) {
+        const text = String(value || "").trim();
+        const map = {
+          CN: "中国",
+          China: "中国",
+          "United States": "美国",
+          US: "美国",
+          USA: "美国",
+          "Hong Kong": "中国香港",
+          HK: "中国香港",
+          Macau: "中国澳门",
+          MO: "中国澳门",
+          Taiwan: "中国台湾",
+          TW: "中国台湾"
+        };
+
+        return map[text] || text;
+      }
+
       function formatRegion(parts) {
         const unique = [];
-        for (const part of parts.filter(Boolean)) {
+        for (const part of parts.map(toSimplifiedRegionName).filter(Boolean)) {
           if (!unique.includes(part)) unique.push(part);
         }
-        return unique.join(" / ") || "未知地区";
+        return unique.join("，") || "未知地区";
       }
 
       function normalizeGeo(raw = {}) {
-        const country = raw.country || raw.country_name || "";
+        let country = raw.country || raw.country_name || "";
+        if (raw.country_code && typeof Intl !== "undefined" && Intl.DisplayNames) {
+          try {
+            country = new Intl.DisplayNames(["zh-Hans-CN"], { type: "region" }).of(raw.country_code) || country;
+          } catch {
+            country = country || "";
+          }
+        }
         const region = raw.region || raw.regionName || raw.region_name || "";
         const city = raw.city || "";
         return {
           ip: raw.ip || "未知",
-          country,
-          region,
-          city,
+          country: toSimplifiedRegionName(country),
+          region: toSimplifiedRegionName(region),
+          city: toSimplifiedRegionName(city),
           regionLabel: formatRegion([country, region, city])
         };
       }
@@ -571,7 +597,6 @@
         participantLocation.innerHTML = `
           <span>当前参与位置</span>
           <strong>${escapeHtml(currentParticipant.regionLabel)}</strong>
-          <em>公网 IP：${escapeHtml(maskEmpty(currentParticipant.ip))}</em>
           <em>设备：${escapeHtml(deviceId.slice(0, 18))}</em>
         `;
       }
@@ -825,7 +850,6 @@
 
         if (voted) {
           voterMeta[key] = {
-            ip: currentParticipant.ip,
             regionLabel: currentParticipant.regionLabel,
             votedAt: Date.now()
           };
@@ -883,7 +907,7 @@
             <img src="${image.url || image.dataUrl}" alt="${escapeHtml(image.title)}" loading="lazy" />
             <div class="card-body">
               <h3 class="card-title">${escapeHtml(image.title)}</h3>
-              <p class="ip-location">上传地区：${escapeHtml(image.regionLabel || "未知地区")} · IP：${escapeHtml(maskEmpty(image.uploaderIp))}</p>
+              <p class="ip-location">上传地区：${escapeHtml(image.regionLabel || "未知地区")}</p>
               <div class="vote-row">
                 <span class="vote-count">${image.voters.length} 票</span>
                 <button class="vote-button ${voted ? "voted" : ""}" type="button" data-id="${image.id}">
@@ -925,17 +949,17 @@
 
         for (const image of images) {
           const uploadRegion = image.regionLabel || image.uploaderLocation || "未知地区";
-          const uploadItem = regionMap.get(uploadRegion) || { region: uploadRegion, uploads: 0, votes: 0, ips: new Set() };
+          const uploadItem = regionMap.get(uploadRegion) || { region: uploadRegion, uploads: 0, votes: 0, devices: new Set() };
           uploadItem.uploads += 1;
-          if (image.uploaderIp && image.uploaderIp !== "未知") uploadItem.ips.add(image.uploaderIp);
+          if (image.id) uploadItem.devices.add(`upload_${image.id}`);
           regionMap.set(uploadRegion, uploadItem);
 
           const voterMeta = image.voterMeta || {};
           for (const meta of Object.values(voterMeta)) {
             const voteRegion = meta.regionLabel || "未知地区";
-            const voteItem = regionMap.get(voteRegion) || { region: voteRegion, uploads: 0, votes: 0, ips: new Set() };
+            const voteItem = regionMap.get(voteRegion) || { region: voteRegion, uploads: 0, votes: 0, devices: new Set() };
             voteItem.votes += 1;
-            if (meta.ip && meta.ip !== "未知") voteItem.ips.add(meta.ip);
+            if (meta.votedAt) voteItem.devices.add(`vote_${meta.votedAt}`);
             regionMap.set(voteRegion, voteItem);
           }
         }
@@ -951,7 +975,7 @@
                   <article class="region-card">
                     <strong>${escapeHtml(item.region)}</strong>
                     <span>${item.uploads} 次上传 · ${item.votes} 次投票</span>
-                    <em>${item.ips.size ? `${item.ips.size} 个公网 IP` : "暂无 IP 记录"}</em>
+                    <em>${item.devices.size ? `${item.devices.size} 条参与记录` : "暂无参与记录"}</em>
                   </article>
                 `
               )
@@ -1045,7 +1069,7 @@
             originalUrl: uploadResult.url,
             deleteUrl: uploadResult.deleteUrl,
             createdAt: Date.now(),
-            uploaderIp: currentParticipant.ip,
+            uploaderIp: "",
             uploaderLocation: currentParticipant.regionLabel,
             regionLabel: currentParticipant.regionLabel,
             voterMeta: {},
@@ -1115,7 +1139,6 @@
         if (index === -1) {
           image.voters.push(deviceId);
           image.voterMeta[key] = {
-            ip: currentParticipant.ip,
             regionLabel: currentParticipant.regionLabel,
             votedAt: Date.now()
           };
@@ -1129,7 +1152,15 @@
       });
 
       exportButton.addEventListener("click", () => {
-        const blob = new Blob([JSON.stringify({ images: currentImages }, null, 2)], { type: "application/json" });
+        const exportImages = currentImages.map(({ uploaderIp, ...image }) => {
+          const voterMeta = {};
+          for (const [key, meta] of Object.entries(image.voterMeta || {})) {
+            const { ip, ...safeMeta } = meta || {};
+            voterMeta[key] = safeMeta;
+          }
+          return { ...image, voterMeta };
+        });
+        const blob = new Blob([JSON.stringify({ images: exportImages }, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
