@@ -1,0 +1,17 @@
+{
+  "name": "anonymous-image-voting-site",
+  "version": "1.0.0",
+  "description": "一个支持图片上传、展示和匿名投票的网站",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "multer": "^2.0.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

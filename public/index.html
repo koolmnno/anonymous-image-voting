@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>匿名图片投票</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Image Vote</p>
+          <h1>上传图片，匿名投票</h1>
+          <p class="subtitle">无需登录即可参与投票。每个浏览器会获得一个匿名身份，同一张图片可投票或取消投票。</p>
+        </div>
+      </section>
+
+      <section class="panel upload-panel">
+        <h2>上传图片</h2>
+        <form id="uploadForm" class="upload-form">
+          <label>
+            图片标题
+            <input id="titleInput" name="title" type="text" maxlength="60" placeholder="例如：我最喜欢的旅行照片" />
+          </label>
+
+          <label class="file-drop" for="imageInput">
+            <input id="imageInput" name="image" type="file" accept="image/*" required />
+            <span id="fileText">点击选择图片，最大 8MB</span>
+          </label>
+
+          <button type="submit">上传并展示</button>
+        </form>
+        <p id="message" class="message" role="status"></p>
+      </section>
+
+      <section class="gallery-header">
+        <div>
+          <h2>图片展示</h2>
+          <p>默认按票数排序，票数相同则新上传的图片靠前。</p>
+        </div>
+        <button id="refreshButton" class="secondary-button" type="button">刷新</button>
+      </section>
+
+      <section id="gallery" class="gallery" aria-live="polite"></section>
+      <template id="emptyTemplate">
+        <div class="empty">
+          <h3>还没有图片</h3>
+          <p>上传第一张图片后，它会显示在这里。</p>
+        </div>
+      </template>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
