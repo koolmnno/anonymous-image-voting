@@ -354,6 +354,7 @@
 
           <button type="submit">参与</button>
         </form>
+        <div id="participantLocation" class="participant-location">正在获取参与位置...</div>
         <p id="message" class="message" role="status"></p>
       </section>
 
@@ -418,6 +419,7 @@
           <button id="closeLeaderboardButton" class="close-button" type="button" aria-label="关闭排行榜">×</button>
         </div>
         <div id="leaderboardList" class="leaderboard-list"></div>
+        <div id="regionBoard" class="region-board"></div>
       </div>
     </section>
 
@@ -445,6 +447,7 @@
     <script>
       const STORAGE_KEY = "image_vote_pages_data";
       const ANON_KEY = "image_vote_pages_anon_id";
+      const GEO_CACHE_KEY = "image_vote_geo_cache";
       const IMGBB_KEY = "image_vote_imgbb_api_key";
       const BMOB_APP_ID_KEY = "image_vote_bmob_app_id";
       const BMOB_REST_KEY_KEY = "image_vote_bmob_rest_key";
@@ -473,12 +476,21 @@
       const imageInput = document.querySelector("#imageInput");
       const fileText = document.querySelector("#fileText");
       const message = document.querySelector("#message");
+      const participantLocation = document.querySelector("#participantLocation");
       const modeText = document.querySelector("#modeText");
       const exportButton = document.querySelector("#exportButton");
       const clearButton = document.querySelector("#clearButton");
       const leaderboardList = document.querySelector("#leaderboardList");
+      const regionBoard = document.querySelector("#regionBoard");
       let currentImages = [];
       let lastSettingsOpenPoint = null;
+      let currentParticipant = {
+        ip: "未知",
+        regionLabel: "未知地区",
+        city: "",
+        region: "",
+        country: ""
+      };
 
       function getAnonId() {
         let id = localStorage.getItem(ANON_KEY);
@@ -503,6 +515,72 @@
 
       function setMessage(text) {
         message.textContent = text;
+      }
+
+      function maskEmpty(value, fallback = "未知") {
+        return value ? String(value).trim() : fallback;
+      }
+
+      function formatRegion(parts) {
+        const unique = [];
+        for (const part of parts.filter(Boolean)) {
+          if (!unique.includes(part)) unique.push(part);
+        }
+        return unique.join(" / ") || "未知地区";
+      }
+
+      function normalizeGeo(raw = {}) {
+        const country = raw.country || raw.country_name || "";
+        const region = raw.region || raw.regionName || raw.region_name || "";
+        const city = raw.city || "";
+        return {
+          ip: raw.ip || "未知",
+          country,
+          region,
+          city,
+          regionLabel: formatRegion([country, region, city])
+        };
+      }
+
+      function updateParticipantLocation() {
+        participantLocation.innerHTML = `
+          <span>当前参与位置</span>
+          <strong>${escapeHtml(currentParticipant.regionLabel)}</strong>
+          <em>公网 IP：${escapeHtml(maskEmpty(currentParticipant.ip))}</em>
+        `;
+      }
+
+      async function loadParticipantLocation() {
+        const cached = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || "null");
+        if (cached && Date.now() - cached.savedAt < 1000 * 60 * 30) {
+          currentParticipant = cached.data;
+          updateParticipantLocation();
+          return;
+        }
+
+        updateParticipantLocation();
+
+        const sources = [
+          "https://ipwho.is/?lang=zh-CN",
+          "https://ipapi.co/json/"
+        ];
+
+        for (const url of sources) {
+          try {
+            const response = await fetch(url, { cache: "no-store" });
+            const data = await response.json();
+            if (data && data.success !== false && (data.ip || data.query)) {
+              currentParticipant = normalizeGeo({ ...data, ip: data.ip || data.query });
+              localStorage.setItem(GEO_CACHE_KEY, JSON.stringify({ savedAt: Date.now(), data: currentParticipant }));
+              updateParticipantLocation();
+              return;
+            }
+          } catch {
+            // 尝试下一个公开定位接口
+          }
+        }
+
+        participantLocation.innerHTML = "<span>当前参与位置</span><strong>定位失败</strong><em>仍可继续参与</em>";
       }
 
       function addPressRipple(event) {
@@ -646,7 +724,11 @@
           originalUrl: item.originalUrl,
           deleteUrl: item.deleteUrl,
           createdAt: new Date(item.createdAt || item.createdAtMs || Date.now()).getTime(),
-          voters: Array.isArray(item.voters) ? item.voters : []
+          voters: Array.isArray(item.voters) ? item.voters : [],
+          voterMeta: item.voterMeta || {},
+          uploaderIp: item.uploaderIp || "未知",
+          regionLabel: item.regionLabel || item.uploaderLocation || "未知地区",
+          uploaderLocation: item.uploaderLocation || item.regionLabel || "未知地区"
         };
       }
 
@@ -694,9 +776,17 @@
             originalUrl: image.originalUrl,
             deleteUrl: image.deleteUrl,
             createdAtMs: image.createdAt,
+            uploaderIp: image.uploaderIp,
+            uploaderLocation: image.uploaderLocation,
+            regionLabel: image.regionLabel,
+            voterMeta: {},
             voters: []
           })
         });
+      }
+
+      function voterMetaKey() {
+        return getAnonId().replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 96);
       }
 
       async function toggleCloudVote(id) {
@@ -704,9 +794,23 @@
         const current = await bmobRequest(`${BMOB_CLASS_URL}/${id}`);
         const voters = Array.isArray(current.voters) ? current.voters : [];
         const voted = !voters.includes(anonId);
+        const voterMeta = current.voterMeta || {};
+        const key = voterMetaKey();
+
+        if (voted) {
+          voterMeta[key] = {
+            ip: currentParticipant.ip,
+            regionLabel: currentParticipant.regionLabel,
+            votedAt: Date.now()
+          };
+        } else {
+          delete voterMeta[key];
+        }
+
         await bmobRequest(`${BMOB_CLASS_URL}/${id}`, {
           method: "PUT",
           body: JSON.stringify({
+            voterMeta,
             voters: voted
               ? { __op: "AddUnique", objects: [anonId] }
               : { __op: "Remove", objects: [anonId] }
@@ -753,6 +857,7 @@
             <img src="${image.url || image.dataUrl}" alt="${escapeHtml(image.title)}" loading="lazy" />
             <div class="card-body">
               <h3 class="card-title">${escapeHtml(image.title)}</h3>
+              <p class="ip-location">上传地区：${escapeHtml(image.regionLabel || "未知地区")} · IP：${escapeHtml(maskEmpty(image.uploaderIp))}</p>
               <div class="vote-row">
                 <span class="vote-count">${image.voters.length} 票</span>
                 <button class="vote-button ${voted ? "voted" : ""}" type="button" data-id="${image.id}">
@@ -770,6 +875,7 @@
 
         if (!images.length) {
           leaderboardList.innerHTML = '<div class="empty"><h3>暂无排行</h3><p>上传图片并获得投票后，这里会显示排行榜。</p></div>';
+          regionBoard.innerHTML = "";
           return;
         }
 
@@ -785,6 +891,47 @@
             </article>
           `)
           .join("");
+        renderRegionBoard(images);
+      }
+
+      function renderRegionBoard(images) {
+        const regionMap = new Map();
+
+        for (const image of images) {
+          const uploadRegion = image.regionLabel || image.uploaderLocation || "未知地区";
+          const uploadItem = regionMap.get(uploadRegion) || { region: uploadRegion, uploads: 0, votes: 0, ips: new Set() };
+          uploadItem.uploads += 1;
+          if (image.uploaderIp && image.uploaderIp !== "未知") uploadItem.ips.add(image.uploaderIp);
+          regionMap.set(uploadRegion, uploadItem);
+
+          const voterMeta = image.voterMeta || {};
+          for (const meta of Object.values(voterMeta)) {
+            const voteRegion = meta.regionLabel || "未知地区";
+            const voteItem = regionMap.get(voteRegion) || { region: voteRegion, uploads: 0, votes: 0, ips: new Set() };
+            voteItem.votes += 1;
+            if (meta.ip && meta.ip !== "未知") voteItem.ips.add(meta.ip);
+            regionMap.set(voteRegion, voteItem);
+          }
+        }
+
+        const regions = [...regionMap.values()].sort((a, b) => b.votes - a.votes || b.uploads - a.uploads);
+
+        regionBoard.innerHTML = `
+          <h3>地区分区</h3>
+          <div class="region-grid">
+            ${regions
+              .map(
+                (item) => `
+                  <article class="region-card">
+                    <strong>${escapeHtml(item.region)}</strong>
+                    <span>${item.uploads} 次上传 · ${item.votes} 次投票</span>
+                    <em>${item.ips.size ? `${item.ips.size} 个公网 IP` : "暂无 IP 记录"}</em>
+                  </article>
+                `
+              )
+              .join("")}
+          </div>
+        `;
       }
 
       function escapeHtml(value) {
@@ -872,6 +1019,10 @@
             originalUrl: uploadResult.url,
             deleteUrl: uploadResult.deleteUrl,
             createdAt: Date.now(),
+            uploaderIp: currentParticipant.ip,
+            uploaderLocation: currentParticipant.regionLabel,
+            regionLabel: currentParticipant.regionLabel,
+            voterMeta: {},
             voters: []
           };
 
@@ -922,10 +1073,18 @@
         if (!image) return;
 
         const index = image.voters.indexOf(anonId);
+        const key = voterMetaKey();
+        image.voterMeta = image.voterMeta || {};
         if (index === -1) {
           image.voters.push(anonId);
+          image.voterMeta[key] = {
+            ip: currentParticipant.ip,
+            regionLabel: currentParticipant.regionLabel,
+            votedAt: Date.now()
+          };
         } else {
           image.voters.splice(index, 1);
+          delete image.voterMeta[key];
         }
 
         writeData(data);
@@ -970,6 +1129,7 @@
       saveConfigButton.addEventListener("click", saveConfig);
       document.addEventListener("pointerdown", addPressRipple);
       getAnonId();
+      loadParticipantLocation();
       loadImages();
     </script>
   </body>
