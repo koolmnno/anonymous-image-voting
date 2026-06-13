@@ -335,15 +335,9 @@
   <body>
     <main class="page">
       <div class="top-bar">
+        <button id="openLeaderboardButton" class="secondary" type="button">排行榜</button>
         <button id="openSettingsButton" class="secondary" type="button">设置</button>
       </div>
-
-      <section class="hero">
-        <p class="eyebrow">GitHub Pages</p>
-        <h1>上传图片，匿名投票</h1>
-        <p class="subtitle">这是 GitHub Pages + ImgBB 图床 + Bmob 共享数据库版本。图片存图床，图片列表和投票数据存云端。</p>
-        <p class="notice">配置 Bmob 后，不同用户打开同一个网址可以共享图片列表和投票结果；如果未配置 Bmob，则自动退回当前浏览器本地模式。</p>
-      </section>
 
       <section class="panel">
         <h2>上传图片</h2>
@@ -366,11 +360,7 @@
       <section class="gallery-header">
         <div>
           <h2>图片展示</h2>
-          <p id="modeText">正在检测数据模式...</p>
-        </div>
-        <div class="gallery-actions">
-          <button id="exportButton" class="secondary" type="button">导出数据</button>
-          <button id="clearButton" class="danger" type="button">清空本地数据</button>
+          <p>上传图片后会显示在这里，按票数自动排序。</p>
         </div>
       </section>
 
@@ -403,15 +393,31 @@
         </div>
 
         <p class="setting-help">
+          <strong id="modeText">正在检测数据模式...</strong><br />
           ImgBB 申请地址：<a href="https://api.imgbb.com/" target="_blank" rel="noopener">https://api.imgbb.com/</a>。
           Bmob 创建应用后，在“应用密钥”里复制 Application ID 和 REST API Key。
           这些配置只保存在当前浏览器。
         </p>
 
         <div class="settings-actions">
+          <button id="exportButton" class="secondary" type="button">导出数据</button>
+          <button id="clearButton" class="danger" type="button">清空本地数据</button>
           <button id="clearConfigButton" class="secondary" type="button">清除配置</button>
           <button id="saveConfigButton" type="button">保存配置</button>
         </div>
+      </div>
+    </section>
+
+    <section id="leaderboardBackdrop" class="settings-backdrop" aria-hidden="true">
+      <div class="settings-dialog leaderboard-dialog" role="dialog" aria-modal="true" aria-labelledby="leaderboardTitle">
+        <div class="settings-head">
+          <div>
+            <h2 id="leaderboardTitle">排行榜</h2>
+            <p>根据当前图片投票数自动排序，票数相同则新上传靠前。</p>
+          </div>
+          <button id="closeLeaderboardButton" class="secondary" type="button">关闭</button>
+        </div>
+        <div id="leaderboardList" class="leaderboard-list"></div>
       </div>
     </section>
 
@@ -422,13 +428,17 @@
       const BMOB_APP_ID_KEY = "image_vote_bmob_app_id";
       const BMOB_REST_KEY_KEY = "image_vote_bmob_rest_key";
       const BMOB_CLASS_URL = "https://api2.bmob.cn/1/classes/ImageVoteImage";
+      const SETTINGS_PASSWORD = "zy78054054";
       const MAX_FILE_SIZE = 8 * 1024 * 1024;
 
       const gallery = document.querySelector("#gallery");
       const uploadForm = document.querySelector("#uploadForm");
       const settingsBackdrop = document.querySelector("#settingsBackdrop");
+      const leaderboardBackdrop = document.querySelector("#leaderboardBackdrop");
       const openSettingsButton = document.querySelector("#openSettingsButton");
       const closeSettingsButton = document.querySelector("#closeSettingsButton");
+      const openLeaderboardButton = document.querySelector("#openLeaderboardButton");
+      const closeLeaderboardButton = document.querySelector("#closeLeaderboardButton");
       const apiKeyInput = document.querySelector("#apiKeyInput");
       const bmobAppIdInput = document.querySelector("#bmobAppIdInput");
       const bmobRestKeyInput = document.querySelector("#bmobRestKeyInput");
@@ -441,6 +451,8 @@
       const modeText = document.querySelector("#modeText");
       const exportButton = document.querySelector("#exportButton");
       const clearButton = document.querySelector("#clearButton");
+      const leaderboardList = document.querySelector("#leaderboardList");
+      let currentImages = [];
 
       function getAnonId() {
         let id = localStorage.getItem(ANON_KEY);
@@ -473,9 +485,29 @@
         apiKeyInput.focus();
       }
 
+      function requestOpenSettings() {
+        const password = prompt("请输入设置密码");
+        if (password !== SETTINGS_PASSWORD) {
+          setMessage("设置密码错误，无法打开设置。");
+          return;
+        }
+        openSettings();
+      }
+
       function closeSettings() {
         settingsBackdrop.classList.remove("open");
         settingsBackdrop.setAttribute("aria-hidden", "true");
+      }
+
+      function openLeaderboard() {
+        renderLeaderboard();
+        leaderboardBackdrop.classList.add("open");
+        leaderboardBackdrop.setAttribute("aria-hidden", "false");
+      }
+
+      function closeLeaderboard() {
+        leaderboardBackdrop.classList.remove("open");
+        leaderboardBackdrop.setAttribute("aria-hidden", "true");
       }
 
       function getApiKey() {
@@ -638,6 +670,7 @@
       function renderImages(sourceImages) {
         const anonId = getAnonId();
         const images = [...(sourceImages || [])].sort((a, b) => b.voters.length - a.voters.length || b.createdAt - a.createdAt);
+        currentImages = images;
         gallery.innerHTML = "";
 
         if (!images.length) {
@@ -663,6 +696,28 @@
           `;
           gallery.appendChild(card);
         }
+      }
+
+      function renderLeaderboard() {
+        const images = [...currentImages].sort((a, b) => b.voters.length - a.voters.length || b.createdAt - a.createdAt);
+
+        if (!images.length) {
+          leaderboardList.innerHTML = '<div class="empty"><h3>暂无排行</h3><p>上传图片并获得投票后，这里会显示排行榜。</p></div>';
+          return;
+        }
+
+        leaderboardList.innerHTML = images
+          .map((image, index) => `
+            <article class="leaderboard-item">
+              <div class="rank-badge">${index + 1}</div>
+              <img src="${image.url || image.dataUrl}" alt="${escapeHtml(image.title)}" loading="lazy" />
+              <div class="leaderboard-info">
+                <h3>${escapeHtml(image.title)}</h3>
+                <p>${image.voters.length} 票</p>
+              </div>
+            </article>
+          `)
+          .join("");
       }
 
       function escapeHtml(value) {
@@ -723,8 +778,7 @@
         }
 
         if (!apiKey) {
-          setMessage("请先打开设置，填写并保存 ImgBB API Key。");
-          openSettings();
+          setMessage("请先点击右上角设置，输入密码后填写并保存 ImgBB API Key。");
           return;
         }
 
@@ -812,7 +866,7 @@
       });
 
       exportButton.addEventListener("click", () => {
-        const blob = new Blob([JSON.stringify(readData(), null, 2)], { type: "application/json" });
+        const blob = new Blob([JSON.stringify({ images: currentImages }, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         link.href = url;
@@ -836,15 +890,23 @@
       apiKeyInput.value = getApiKey();
       bmobAppIdInput.value = getBmobConfig().appId;
       bmobRestKeyInput.value = getBmobConfig().restKey;
-      openSettingsButton.addEventListener("click", openSettings);
+      openSettingsButton.addEventListener("click", requestOpenSettings);
       closeSettingsButton.addEventListener("click", closeSettings);
+      openLeaderboardButton.addEventListener("click", openLeaderboard);
+      closeLeaderboardButton.addEventListener("click", closeLeaderboard);
       clearConfigButton.addEventListener("click", clearConfig);
       saveConfigButton.addEventListener("click", saveConfig);
       settingsBackdrop.addEventListener("click", (event) => {
         if (event.target === settingsBackdrop) closeSettings();
       });
+      leaderboardBackdrop.addEventListener("click", (event) => {
+        if (event.target === leaderboardBackdrop) closeLeaderboard();
+      });
       document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") closeSettings();
+        if (event.key === "Escape") {
+          closeSettings();
+          closeLeaderboard();
+        }
       });
       getAnonId();
       loadImages();
