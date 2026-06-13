@@ -335,6 +335,7 @@
   <body>
     <main class="page">
       <div class="top-bar">
+        <button id="openRegisterButton" class="secondary" type="button">邮箱注册</button>
         <button id="openLeaderboardButton" class="secondary" type="button">排行榜</button>
         <button id="openSettingsButton" class="secondary" type="button">设置</button>
       </div>
@@ -444,15 +445,38 @@
       </div>
     </section>
 
+    <section id="registerBackdrop" class="settings-backdrop" aria-hidden="true">
+      <div class="settings-dialog password-dialog" role="dialog" aria-modal="true" aria-labelledby="registerTitle">
+        <div class="settings-head">
+          <div>
+            <h2 id="registerTitle">QQ 邮箱注册</h2>
+            <p>仅支持 QQ 邮箱注册，注册后才能参与上传和投票。</p>
+          </div>
+          <button id="closeRegisterButton" class="close-button" type="button" aria-label="关闭邮箱注册">×</button>
+        </div>
+        <div class="config-form">
+          <label>
+            QQ 邮箱
+            <input id="registerEmailInput" type="email" inputmode="email" placeholder="例如：123456@qq.com" />
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button id="saveRegisterButton" type="button">完成注册</button>
+        </div>
+      </div>
+    </section>
+
     <script>
       const STORAGE_KEY = "image_vote_pages_data";
       const ANON_KEY = "image_vote_pages_anon_id";
       const DEVICE_KEY = "image_vote_device_id";
+      const REGISTERED_EMAIL_KEY = "image_vote_registered_email";
       const GEO_CACHE_KEY = "image_vote_geo_cache";
       const IMGBB_KEY = "image_vote_imgbb_api_key";
       const BMOB_APP_ID_KEY = "image_vote_bmob_app_id";
       const BMOB_REST_KEY_KEY = "image_vote_bmob_rest_key";
       const BMOB_CLASS_URL = "https://api2.bmob.cn/1/classes/ImageVoteImage";
+      const BMOB_USER_CLASS_URL = "https://api2.bmob.cn/1/classes/EmailVoteUser";
       const SETTINGS_PASSWORD = "zy78054054";
       const MAX_FILE_SIZE = 8 * 1024 * 1024;
 
@@ -461,13 +485,18 @@
       const settingsBackdrop = document.querySelector("#settingsBackdrop");
       const leaderboardBackdrop = document.querySelector("#leaderboardBackdrop");
       const passwordBackdrop = document.querySelector("#passwordBackdrop");
+      const registerBackdrop = document.querySelector("#registerBackdrop");
+      const openRegisterButton = document.querySelector("#openRegisterButton");
       const openSettingsButton = document.querySelector("#openSettingsButton");
       const closeSettingsButton = document.querySelector("#closeSettingsButton");
       const openLeaderboardButton = document.querySelector("#openLeaderboardButton");
       const closeLeaderboardButton = document.querySelector("#closeLeaderboardButton");
       const closePasswordButton = document.querySelector("#closePasswordButton");
+      const closeRegisterButton = document.querySelector("#closeRegisterButton");
       const passwordInput = document.querySelector("#passwordInput");
       const unlockSettingsButton = document.querySelector("#unlockSettingsButton");
+      const registerEmailInput = document.querySelector("#registerEmailInput");
+      const saveRegisterButton = document.querySelector("#saveRegisterButton");
       const apiKeyInput = document.querySelector("#apiKeyInput");
       const bmobAppIdInput = document.querySelector("#bmobAppIdInput");
       const bmobRestKeyInput = document.querySelector("#bmobRestKeyInput");
@@ -498,6 +527,34 @@
         localStorage.setItem(DEVICE_KEY, id);
         localStorage.setItem(ANON_KEY, id);
         return id;
+      }
+
+      function getRegisteredEmail() {
+        return (localStorage.getItem(REGISTERED_EMAIL_KEY) || "").trim().toLowerCase();
+      }
+
+      function getVoterId() {
+        const email = getRegisteredEmail();
+        return email ? `email_${hashText(email)}` : getAnonId();
+      }
+
+      function isQQEmail(email) {
+        return /^[1-9][0-9]{4,11}@qq\.com$/i.test(String(email || "").trim());
+      }
+
+      function maskEmail(email) {
+        const [name, domain] = String(email || "").split("@");
+        if (!name || !domain) return "未注册";
+        const head = name.slice(0, 2);
+        const tail = name.length > 4 ? name.slice(-2) : "";
+        return `${head}${"*".repeat(Math.max(2, name.length - head.length - tail.length))}${tail}@${domain}`;
+      }
+
+      function requireRegistered(event) {
+        if (getRegisteredEmail()) return true;
+        setMessage("请先使用 QQ 邮箱注册后再参与。");
+        openRegister(event);
+        return false;
       }
 
       function hashText(value) {
@@ -726,6 +783,7 @@
           <span>当前参与位置</span>
           <strong>${escapeHtml(currentParticipant.regionLabel)}</strong>
           <em>设备：${escapeHtml(deviceId.slice(0, 18))}</em>
+          <em>邮箱：${escapeHtml(maskEmail(getRegisteredEmail()))}</em>
         `;
       }
 
@@ -825,6 +883,16 @@
         closeModal(passwordBackdrop);
       }
 
+      function openRegister(event) {
+        openModal(registerBackdrop, event);
+        registerEmailInput.value = getRegisteredEmail();
+        registerEmailInput.focus();
+      }
+
+      function closeRegister() {
+        closeModal(registerBackdrop);
+      }
+
       function openLeaderboard(event) {
         renderLeaderboard();
         openModal(leaderboardBackdrop, event);
@@ -848,6 +916,57 @@
       function hasBmobConfig() {
         const config = getBmobConfig();
         return Boolean(config.appId && config.restKey);
+      }
+
+      async function syncRegisteredEmail(email) {
+        if (!hasBmobConfig()) return;
+
+        const safeEmail = email.toLowerCase();
+        const where = encodeURIComponent(JSON.stringify({ email: safeEmail }));
+        const existing = await bmobRequest(`${BMOB_USER_CLASS_URL}?where=${where}&limit=1`);
+        const payload = {
+          email: safeEmail,
+          voterId: getVoterId(),
+          deviceId: getAnonId(),
+          regionLabel: currentParticipant.regionLabel,
+          updatedAtMs: Date.now()
+        };
+
+        if (existing.results && existing.results[0]) {
+          await bmobRequest(`${BMOB_USER_CLASS_URL}/${existing.results[0].objectId}`, {
+            method: "PUT",
+            body: JSON.stringify(payload)
+          });
+        } else {
+          await bmobRequest(BMOB_USER_CLASS_URL, {
+            method: "POST",
+            body: JSON.stringify({
+              ...payload,
+              createdAtMs: Date.now()
+            })
+          });
+        }
+      }
+
+      async function saveRegistration() {
+        const email = registerEmailInput.value.trim().toLowerCase();
+        if (!isQQEmail(email)) {
+          setMessage("邮箱格式不正确，仅支持 QQ 邮箱，例如：123456@qq.com。");
+          registerEmailInput.select();
+          return;
+        }
+
+        localStorage.setItem(REGISTERED_EMAIL_KEY, email);
+
+        try {
+          await syncRegisteredEmail(email);
+          setMessage("QQ 邮箱注册成功，现在可以参与上传和投票。");
+        } catch (error) {
+          setMessage(`本地注册成功，但云端同步失败：${error.message || "请检查 Bmob 配置"}`);
+        }
+
+        updateParticipantLocation();
+        closeRegister();
       }
 
       function saveConfig() {
@@ -965,11 +1084,11 @@
       }
 
       function voterMetaKey() {
-        return getAnonId().replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 96);
+        return getVoterId().replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 96);
       }
 
       async function toggleCloudVote(id) {
-        const anonId = getAnonId();
+        const anonId = getVoterId();
         const current = await bmobRequest(`${BMOB_CLASS_URL}/${id}`);
         const voters = Array.isArray(current.voters) ? current.voters : [];
         const voted = !voters.includes(anonId);
@@ -1017,7 +1136,7 @@
       }
 
       function renderImages(sourceImages) {
-        const anonId = getAnonId();
+        const anonId = getVoterId();
         const images = [...(sourceImages || [])].sort((a, b) => b.createdAt - a.createdAt);
         currentImages = images;
         gallery.innerHTML = "";
@@ -1161,6 +1280,7 @@
 
       uploadForm.addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (!requireRegistered(event)) return;
         const file = imageInput.files[0];
         const apiKey = getApiKey();
 
@@ -1227,12 +1347,13 @@
       gallery.addEventListener("click", (event) => {
         const button = event.target.closest(".vote-button");
         if (!button) return;
-        const deviceId = getAnonId();
-        const alreadyVotedImage = currentImages.find((item) => Array.isArray(item.voters) && item.voters.includes(deviceId));
+        if (!requireRegistered(event)) return;
+        const voterId = getVoterId();
+        const alreadyVotedImage = currentImages.find((item) => Array.isArray(item.voters) && item.voters.includes(voterId));
 
         if (hasBmobConfig()) {
           if (alreadyVotedImage && alreadyVotedImage.id !== button.dataset.id) {
-            setMessage("当前设备已经投过票了，一台设备只能投一票。");
+            setMessage("当前 QQ 邮箱已经投过票了，一个 QQ 邮箱只能投一票。");
             return;
           }
 
@@ -1257,15 +1378,15 @@
         if (!image) return;
 
         if (alreadyVotedImage && alreadyVotedImage.id !== image.id) {
-          setMessage("当前设备已经投过票了，一台设备只能投一票。");
+          setMessage("当前 QQ 邮箱已经投过票了，一个 QQ 邮箱只能投一票。");
           return;
         }
 
-        const index = image.voters.indexOf(deviceId);
+        const index = image.voters.indexOf(voterId);
         const key = voterMetaKey();
         image.voterMeta = image.voterMeta || {};
         if (index === -1) {
-          image.voters.push(deviceId);
+          image.voters.push(voterId);
           image.voterMeta[key] = {
             regionLabel: currentParticipant.regionLabel,
             votedAt: Date.now()
@@ -1312,6 +1433,13 @@
       apiKeyInput.value = getApiKey();
       bmobAppIdInput.value = getBmobConfig().appId;
       bmobRestKeyInput.value = getBmobConfig().restKey;
+      registerEmailInput.value = getRegisteredEmail();
+      openRegisterButton.addEventListener("click", openRegister);
+      closeRegisterButton.addEventListener("click", closeRegister);
+      saveRegisterButton.addEventListener("click", saveRegistration);
+      registerEmailInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") saveRegistration();
+      });
       openSettingsButton.addEventListener("click", requestOpenSettings);
       closeSettingsButton.addEventListener("click", closeSettings);
       openLeaderboardButton.addEventListener("click", openLeaderboard);
