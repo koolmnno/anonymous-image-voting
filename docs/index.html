@@ -374,7 +374,7 @@
             <h2 id="settingsTitle">图床与共享数据库设置</h2>
             <p>配置 ImgBB 用于上传图片，配置 Bmob 用于多人共享图片列表和投票结果。</p>
           </div>
-          <button id="closeSettingsButton" class="close-button" type="button" aria-label="关闭设置">❌</button>
+          <button id="closeSettingsButton" class="close-button" type="button" aria-label="关闭设置">×</button>
         </div>
 
         <div class="config-form">
@@ -415,7 +415,7 @@
             <h2 id="leaderboardTitle">排行榜</h2>
             <p>根据当前图片投票数自动排序，票数相同则新上传靠前。</p>
           </div>
-          <button id="closeLeaderboardButton" class="close-button" type="button" aria-label="关闭排行榜">❌</button>
+          <button id="closeLeaderboardButton" class="close-button" type="button" aria-label="关闭排行榜">×</button>
         </div>
         <div id="leaderboardList" class="leaderboard-list"></div>
       </div>
@@ -428,7 +428,7 @@
             <h2 id="passwordTitle">输入设置密码</h2>
             <p>设置区包含图床和共享数据库密钥，需要验证后才能进入。</p>
           </div>
-          <button id="closePasswordButton" class="close-button" type="button" aria-label="关闭密码输入">❌</button>
+          <button id="closePasswordButton" class="close-button" type="button" aria-label="关闭密码输入">×</button>
         </div>
         <div class="config-form">
           <label>
@@ -503,6 +503,18 @@
 
       function setMessage(text) {
         message.textContent = text;
+      }
+
+      function addPressRipple(event) {
+        const button = event.target.closest("button");
+        if (!button || button.disabled) return;
+        const rect = button.getBoundingClientRect();
+        button.style.setProperty("--tap-x", `${event.clientX - rect.left}px`);
+        button.style.setProperty("--tap-y", `${event.clientY - rect.top}px`);
+        button.classList.remove("is-pressing");
+        requestAnimationFrame(() => {
+          button.classList.add("is-pressing");
+        });
       }
 
       function setOpenOrigin(backdrop, event) {
@@ -956,6 +968,7 @@
       });
       clearConfigButton.addEventListener("click", clearConfig);
       saveConfigButton.addEventListener("click", saveConfig);
+      document.addEventListener("pointerdown", addPressRipple);
       getAnonId();
       loadImages();
     </script>
