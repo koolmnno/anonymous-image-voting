@@ -276,20 +276,28 @@
       <section class="hero">
         <p class="eyebrow">GitHub Pages</p>
         <h1>上传图片，匿名投票</h1>
-        <p class="subtitle">这是 GitHub Pages + 第三方图床版本。图片上传到 ImgBB 图床，页面保存图片外链和投票数据。</p>
-        <p class="notice">注意：GitHub Pages 没有数据库，所以投票数据仍保存在当前浏览器本地；图片外链可长期展示，但不同用户之间不会自动共享同一份投票结果。</p>
+        <p class="subtitle">这是 GitHub Pages + ImgBB 图床 + Bmob 共享数据库版本。图片存图床，图片列表和投票数据存云端。</p>
+        <p class="notice">配置 Bmob 后，不同用户打开同一个网址可以共享图片列表和投票结果；如果未配置 Bmob，则自动退回当前浏览器本地模式。</p>
       </section>
 
       <section class="panel" style="margin-bottom: 22px">
-        <h2>图床设置</h2>
+        <h2>图床与共享数据库设置</h2>
         <div class="config-form">
           <label>
             ImgBB API Key
             <input id="apiKeyInput" type="password" placeholder="粘贴你的 ImgBB API Key" />
           </label>
-          <button id="saveApiKeyButton" type="button">保存图床 Key</button>
+          <label>
+            Bmob Application ID
+            <input id="bmobAppIdInput" type="password" placeholder="粘贴 Bmob Application ID" />
+          </label>
+          <label>
+            Bmob REST API Key
+            <input id="bmobRestKeyInput" type="password" placeholder="粘贴 Bmob REST API Key" />
+          </label>
+          <button id="saveConfigButton" type="button">保存配置</button>
         </div>
-        <p class="message">申请地址：<a href="https://api.imgbb.com/" target="_blank" rel="noopener">https://api.imgbb.com/</a>。Key 只保存在你的浏览器本地，不会上传到 GitHub。</p>
+        <p class="message">ImgBB 申请地址：<a href="https://api.imgbb.com/" target="_blank" rel="noopener">https://api.imgbb.com/</a>。Bmob 创建应用后，在“应用密钥”里复制 Application ID 和 REST API Key。</p>
       </section>
 
       <section class="panel">
@@ -313,7 +321,7 @@
       <section class="gallery-header">
         <div>
           <h2>图片展示</h2>
-          <p>图片使用图床外链，投票数据保存在当前浏览器的 localStorage。</p>
+          <p id="modeText">正在检测数据模式...</p>
         </div>
         <div class="gallery-actions">
           <button id="exportButton" class="secondary" type="button">导出数据</button>
@@ -328,16 +336,22 @@
       const STORAGE_KEY = "image_vote_pages_data";
       const ANON_KEY = "image_vote_pages_anon_id";
       const IMGBB_KEY = "image_vote_imgbb_api_key";
+      const BMOB_APP_ID_KEY = "image_vote_bmob_app_id";
+      const BMOB_REST_KEY_KEY = "image_vote_bmob_rest_key";
+      const BMOB_CLASS_URL = "https://api2.bmob.cn/1/classes/ImageVoteImage";
       const MAX_FILE_SIZE = 8 * 1024 * 1024;
 
       const gallery = document.querySelector("#gallery");
       const uploadForm = document.querySelector("#uploadForm");
       const apiKeyInput = document.querySelector("#apiKeyInput");
-      const saveApiKeyButton = document.querySelector("#saveApiKeyButton");
+      const bmobAppIdInput = document.querySelector("#bmobAppIdInput");
+      const bmobRestKeyInput = document.querySelector("#bmobRestKeyInput");
+      const saveConfigButton = document.querySelector("#saveConfigButton");
       const titleInput = document.querySelector("#titleInput");
       const imageInput = document.querySelector("#imageInput");
       const fileText = document.querySelector("#fileText");
       const message = document.querySelector("#message");
+      const modeText = document.querySelector("#modeText");
       const exportButton = document.querySelector("#exportButton");
       const clearButton = document.querySelector("#clearButton");
 
@@ -370,21 +384,147 @@
         return localStorage.getItem(IMGBB_KEY) || "";
       }
 
-      function saveApiKey() {
-        const value = apiKeyInput.value.trim();
-        if (!value) {
-          localStorage.removeItem(IMGBB_KEY);
-          setMessage("已清除 ImgBB API Key。");
-          return;
-        }
-        localStorage.setItem(IMGBB_KEY, value);
-        setMessage("ImgBB API Key 已保存到当前浏览器。");
+      function getBmobConfig() {
+        return {
+          appId: localStorage.getItem(BMOB_APP_ID_KEY) || "",
+          restKey: localStorage.getItem(BMOB_REST_KEY_KEY) || ""
+        };
       }
 
-      function renderImages() {
+      function hasBmobConfig() {
+        const config = getBmobConfig();
+        return Boolean(config.appId && config.restKey);
+      }
+
+      function saveConfig() {
+        const imgbbKey = apiKeyInput.value.trim();
+        const bmobAppId = bmobAppIdInput.value.trim();
+        const bmobRestKey = bmobRestKeyInput.value.trim();
+
+        if (!imgbbKey) {
+          localStorage.removeItem(IMGBB_KEY);
+        } else {
+          localStorage.setItem(IMGBB_KEY, imgbbKey);
+        }
+
+        if (!bmobAppId || !bmobRestKey) {
+          localStorage.removeItem(BMOB_APP_ID_KEY);
+          localStorage.removeItem(BMOB_REST_KEY_KEY);
+        } else {
+          localStorage.setItem(BMOB_APP_ID_KEY, bmobAppId);
+          localStorage.setItem(BMOB_REST_KEY_KEY, bmobRestKey);
+        }
+
+        setMessage(hasBmobConfig() ? "配置已保存：当前使用 Bmob 云端共享模式。" : "配置已保存：当前使用浏览器本地模式。");
+        updateModeText();
+        loadImages();
+      }
+
+      function updateModeText() {
+        modeText.textContent = hasBmobConfig()
+          ? "共享模式：图片列表和投票数据保存在 Bmob 云数据库，所有访问者共享。"
+          : "本地模式：未配置 Bmob，图片列表和投票数据只保存在当前浏览器。";
+      }
+
+      function normalizeBmobImage(item) {
+        return {
+          id: item.objectId,
+          title: item.title,
+          url: item.url,
+          originalUrl: item.originalUrl,
+          deleteUrl: item.deleteUrl,
+          createdAt: new Date(item.createdAt || item.createdAtMs || Date.now()).getTime(),
+          voters: Array.isArray(item.voters) ? item.voters : []
+        };
+      }
+
+      function bmobHeaders() {
+        const config = getBmobConfig();
+        return {
+          "X-Bmob-Application-Id": config.appId,
+          "X-Bmob-REST-API-Key": config.restKey,
+          "Content-Type": "application/json"
+        };
+      }
+
+      async function bmobRequest(url, options = {}) {
+        const response = await fetch(url, {
+          ...options,
+          headers: {
+            ...bmobHeaders(),
+            ...(options.headers || {})
+          }
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(result.error || "Bmob 请求失败，请检查密钥和应用配置。");
+        }
+
+        return result;
+      }
+
+      async function fetchCloudImages() {
+        const params = new URLSearchParams({
+          order: "-createdAt",
+          limit: "500"
+        });
+        const result = await bmobRequest(`${BMOB_CLASS_URL}?${params.toString()}`);
+        return (result.results || []).map(normalizeBmobImage);
+      }
+
+      async function createCloudImage(image) {
+        await bmobRequest(BMOB_CLASS_URL, {
+          method: "POST",
+          body: JSON.stringify({
+            title: image.title,
+            url: image.url,
+            originalUrl: image.originalUrl,
+            deleteUrl: image.deleteUrl,
+            createdAtMs: image.createdAt,
+            voters: []
+          })
+        });
+      }
+
+      async function toggleCloudVote(id) {
         const anonId = getAnonId();
-        const data = readData();
-        const images = [...data.images].sort((a, b) => b.voters.length - a.voters.length || b.createdAt - a.createdAt);
+        const current = await bmobRequest(`${BMOB_CLASS_URL}/${id}`);
+        const voters = Array.isArray(current.voters) ? current.voters : [];
+        const voted = !voters.includes(anonId);
+        await bmobRequest(`${BMOB_CLASS_URL}/${id}`, {
+          method: "PUT",
+          body: JSON.stringify({
+            voters: voted
+              ? { __op: "AddUnique", objects: [anonId] }
+              : { __op: "Remove", objects: [anonId] }
+          })
+        });
+        return voted;
+      }
+
+      async function loadImages() {
+        updateModeText();
+
+        if (!hasBmobConfig()) {
+          renderImages(readData().images);
+          return;
+        }
+
+        gallery.innerHTML = '<div class="empty"><h3>正在加载</h3><p>正在从 Bmob 获取共享图片和投票数据...</p></div>';
+
+        try {
+          const images = await fetchCloudImages();
+          renderImages(images);
+        } catch (error) {
+          setMessage(error.message || "云端数据加载失败，已切换显示本地数据。");
+          renderImages(readData().images);
+        }
+      }
+
+      function renderImages(sourceImages) {
+        const anonId = getAnonId();
+        const images = [...(sourceImages || [])].sort((a, b) => b.voters.length - a.voters.length || b.createdAt - a.createdAt);
         gallery.innerHTML = "";
 
         if (!images.length) {
@@ -490,8 +630,7 @@
 
         try {
           const uploadResult = await uploadToImgBB(file, apiKey);
-          const data = readData();
-          data.images.push({
+          const image = {
             id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
             title: titleInput.value.trim().slice(0, 60) || "未命名图片",
             url: uploadResult.displayUrl || uploadResult.url,
@@ -499,12 +638,21 @@
             deleteUrl: uploadResult.deleteUrl,
             createdAt: Date.now(),
             voters: []
-          });
-          writeData(data);
+          };
+
+          if (hasBmobConfig()) {
+            setMessage("图片已上传到图床，正在写入 Bmob 共享数据库...");
+            await createCloudImage(image);
+          } else {
+            const data = readData();
+            data.images.push(image);
+            writeData(data);
+          }
+
           uploadForm.reset();
           fileText.textContent = "点击选择图片，建议小于 8MB";
-          setMessage("图片已上传到图床，并加入展示区。");
-          renderImages();
+          setMessage(hasBmobConfig() ? "图片已上传并同步到共享数据库。" : "图片已上传到图床，并保存到当前浏览器本地。");
+          await loadImages();
         } catch (error) {
           setMessage(error.message || "图床上传失败。");
         } finally {
@@ -515,6 +663,23 @@
       gallery.addEventListener("click", (event) => {
         const button = event.target.closest(".vote-button");
         if (!button) return;
+
+        if (hasBmobConfig()) {
+          button.disabled = true;
+          setMessage("正在同步投票...");
+          toggleCloudVote(button.dataset.id)
+            .then(() => {
+              setMessage("投票已同步。");
+              return loadImages();
+            })
+            .catch((error) => {
+              setMessage(error.message || "云端投票失败。");
+            })
+            .finally(() => {
+              button.disabled = false;
+            });
+          return;
+        }
 
         const anonId = getAnonId();
         const data = readData();
@@ -529,7 +694,7 @@
         }
 
         writeData(data);
-        renderImages();
+        renderImages(data.images);
       });
 
       exportButton.addEventListener("click", () => {
@@ -543,16 +708,23 @@
       });
 
       clearButton.addEventListener("click", () => {
+        if (hasBmobConfig()) {
+          alert("共享模式下不能在页面里一键清空云端数据库。请到 Bmob 控制台管理数据。");
+          return;
+        }
+
         if (!confirm("确定清空当前浏览器保存的图片和投票数据吗？")) return;
         localStorage.removeItem(STORAGE_KEY);
         setMessage("本地数据已清空。");
-        renderImages();
+        renderImages([]);
       });
 
       apiKeyInput.value = getApiKey();
-      saveApiKeyButton.addEventListener("click", saveApiKey);
+      bmobAppIdInput.value = getBmobConfig().appId;
+      bmobRestKeyInput.value = getBmobConfig().restKey;
+      saveConfigButton.addEventListener("click", saveConfig);
       getAnonId();
-      renderImages();
+      loadImages();
     </script>
   </body>
 </html>
