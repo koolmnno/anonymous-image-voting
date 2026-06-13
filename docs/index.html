@@ -40,6 +40,12 @@
         min-height: 220px;
       }
 
+      .top-bar {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 22px;
+      }
+
       .eyebrow {
         margin: 0 0 12px;
         color: var(--primary);
@@ -98,9 +104,8 @@
 
       .config-form {
         display: grid;
-        grid-template-columns: minmax(260px, 1fr) auto;
+        grid-template-columns: 1fr;
         gap: 16px;
-        align-items: end;
       }
 
       label {
@@ -158,6 +163,61 @@
 
       button.danger {
         background: #c03434;
+      }
+
+      .settings-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(14, 18, 32, 0.42);
+        backdrop-filter: blur(10px);
+      }
+
+      .settings-backdrop.open {
+        display: flex;
+      }
+
+      .settings-dialog {
+        width: min(720px, 100%);
+        max-height: min(90vh, 760px);
+        overflow: auto;
+        padding: 28px;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background: #fff;
+        box-shadow: 0 30px 90px rgba(14, 18, 32, 0.28);
+      }
+
+      .settings-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: flex-start;
+        margin-bottom: 22px;
+      }
+
+      .settings-head p {
+        margin-bottom: 0;
+        color: var(--muted);
+        line-height: 1.7;
+      }
+
+      .settings-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 20px;
+      }
+
+      .setting-help {
+        margin-top: 16px;
+        color: var(--muted);
+        line-height: 1.7;
       }
 
       button:disabled {
@@ -273,31 +333,15 @@
   </head>
   <body>
     <main class="page">
+      <div class="top-bar">
+        <button id="openSettingsButton" class="secondary" type="button">设置</button>
+      </div>
+
       <section class="hero">
         <p class="eyebrow">GitHub Pages</p>
         <h1>上传图片，匿名投票</h1>
         <p class="subtitle">这是 GitHub Pages + ImgBB 图床 + Bmob 共享数据库版本。图片存图床，图片列表和投票数据存云端。</p>
         <p class="notice">配置 Bmob 后，不同用户打开同一个网址可以共享图片列表和投票结果；如果未配置 Bmob，则自动退回当前浏览器本地模式。</p>
-      </section>
-
-      <section class="panel" style="margin-bottom: 22px">
-        <h2>图床与共享数据库设置</h2>
-        <div class="config-form">
-          <label>
-            ImgBB API Key
-            <input id="apiKeyInput" type="password" placeholder="粘贴你的 ImgBB API Key" />
-          </label>
-          <label>
-            Bmob Application ID
-            <input id="bmobAppIdInput" type="password" placeholder="粘贴 Bmob Application ID" />
-          </label>
-          <label>
-            Bmob REST API Key
-            <input id="bmobRestKeyInput" type="password" placeholder="粘贴 Bmob REST API Key" />
-          </label>
-          <button id="saveConfigButton" type="button">保存配置</button>
-        </div>
-        <p class="message">ImgBB 申请地址：<a href="https://api.imgbb.com/" target="_blank" rel="noopener">https://api.imgbb.com/</a>。Bmob 创建应用后，在“应用密钥”里复制 Application ID 和 REST API Key。</p>
       </section>
 
       <section class="panel">
@@ -332,6 +376,44 @@
       <section id="gallery" class="gallery" aria-live="polite"></section>
     </main>
 
+    <section id="settingsBackdrop" class="settings-backdrop" aria-hidden="true">
+      <div class="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="settings-head">
+          <div>
+            <h2 id="settingsTitle">图床与共享数据库设置</h2>
+            <p>配置 ImgBB 用于上传图片，配置 Bmob 用于多人共享图片列表和投票结果。</p>
+          </div>
+          <button id="closeSettingsButton" class="secondary" type="button">关闭</button>
+        </div>
+
+        <div class="config-form">
+          <label>
+            ImgBB API Key
+            <input id="apiKeyInput" type="password" placeholder="粘贴你的 ImgBB API Key" />
+          </label>
+          <label>
+            Bmob Application ID
+            <input id="bmobAppIdInput" type="password" placeholder="粘贴 Bmob Application ID" />
+          </label>
+          <label>
+            Bmob REST API Key
+            <input id="bmobRestKeyInput" type="password" placeholder="粘贴 Bmob REST API Key" />
+          </label>
+        </div>
+
+        <p class="setting-help">
+          ImgBB 申请地址：<a href="https://api.imgbb.com/" target="_blank" rel="noopener">https://api.imgbb.com/</a>。
+          Bmob 创建应用后，在“应用密钥”里复制 Application ID 和 REST API Key。
+          这些配置只保存在当前浏览器。
+        </p>
+
+        <div class="settings-actions">
+          <button id="clearConfigButton" class="secondary" type="button">清除配置</button>
+          <button id="saveConfigButton" type="button">保存配置</button>
+        </div>
+      </div>
+    </section>
+
     <script>
       const STORAGE_KEY = "image_vote_pages_data";
       const ANON_KEY = "image_vote_pages_anon_id";
@@ -343,10 +425,14 @@
 
       const gallery = document.querySelector("#gallery");
       const uploadForm = document.querySelector("#uploadForm");
+      const settingsBackdrop = document.querySelector("#settingsBackdrop");
+      const openSettingsButton = document.querySelector("#openSettingsButton");
+      const closeSettingsButton = document.querySelector("#closeSettingsButton");
       const apiKeyInput = document.querySelector("#apiKeyInput");
       const bmobAppIdInput = document.querySelector("#bmobAppIdInput");
       const bmobRestKeyInput = document.querySelector("#bmobRestKeyInput");
       const saveConfigButton = document.querySelector("#saveConfigButton");
+      const clearConfigButton = document.querySelector("#clearConfigButton");
       const titleInput = document.querySelector("#titleInput");
       const imageInput = document.querySelector("#imageInput");
       const fileText = document.querySelector("#fileText");
@@ -378,6 +464,17 @@
 
       function setMessage(text) {
         message.textContent = text;
+      }
+
+      function openSettings() {
+        settingsBackdrop.classList.add("open");
+        settingsBackdrop.setAttribute("aria-hidden", "false");
+        apiKeyInput.focus();
+      }
+
+      function closeSettings() {
+        settingsBackdrop.classList.remove("open");
+        settingsBackdrop.setAttribute("aria-hidden", "true");
       }
 
       function getApiKey() {
@@ -416,6 +513,21 @@
         }
 
         setMessage(hasBmobConfig() ? "配置已保存：当前使用 Bmob 云端共享模式。" : "配置已保存：当前使用浏览器本地模式。");
+        closeSettings();
+        updateModeText();
+        loadImages();
+      }
+
+      function clearConfig() {
+        if (!confirm("确定清除 ImgBB 和 Bmob 配置吗？")) return;
+        localStorage.removeItem(IMGBB_KEY);
+        localStorage.removeItem(BMOB_APP_ID_KEY);
+        localStorage.removeItem(BMOB_REST_KEY_KEY);
+        apiKeyInput.value = "";
+        bmobAppIdInput.value = "";
+        bmobRestKeyInput.value = "";
+        setMessage("配置已清除，当前使用浏览器本地模式。");
+        closeSettings();
         updateModeText();
         loadImages();
       }
@@ -610,7 +722,8 @@
         }
 
         if (!apiKey) {
-          setMessage("请先填写并保存 ImgBB API Key。");
+          setMessage("请先打开设置，填写并保存 ImgBB API Key。");
+          openSettings();
           return;
         }
 
@@ -722,7 +835,16 @@
       apiKeyInput.value = getApiKey();
       bmobAppIdInput.value = getBmobConfig().appId;
       bmobRestKeyInput.value = getBmobConfig().restKey;
+      openSettingsButton.addEventListener("click", openSettings);
+      closeSettingsButton.addEventListener("click", closeSettings);
+      clearConfigButton.addEventListener("click", clearConfig);
       saveConfigButton.addEventListener("click", saveConfig);
+      settingsBackdrop.addEventListener("click", (event) => {
+        if (event.target === settingsBackdrop) closeSettings();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeSettings();
+      });
       getAnonId();
       loadImages();
     </script>
