@@ -361,7 +361,7 @@
       <section class="gallery-header">
         <div>
           <h2>图片展示</h2>
-          <p>上传图片后会显示在这里，按票数自动排序。</p>
+          <p>上传图片后会显示在这里，按上传时间排序，最新上传在前。</p>
         </div>
       </section>
 
@@ -447,6 +447,7 @@
     <script>
       const STORAGE_KEY = "image_vote_pages_data";
       const ANON_KEY = "image_vote_pages_anon_id";
+      const DEVICE_KEY = "image_vote_device_id";
       const GEO_CACHE_KEY = "image_vote_geo_cache";
       const IMGBB_KEY = "image_vote_imgbb_api_key";
       const BMOB_APP_ID_KEY = "image_vote_bmob_app_id";
@@ -493,12 +494,35 @@
       };
 
       function getAnonId() {
-        let id = localStorage.getItem(ANON_KEY);
+        let id = localStorage.getItem(DEVICE_KEY) || localStorage.getItem(ANON_KEY);
         if (!id) {
-          id = `${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
-          localStorage.setItem(ANON_KEY, id);
+          id = getDeviceFingerprint();
         }
+        localStorage.setItem(DEVICE_KEY, id);
+        localStorage.setItem(ANON_KEY, id);
         return id;
+      }
+
+      function getDeviceFingerprint() {
+        const raw = [
+          navigator.userAgent,
+          navigator.language,
+          navigator.platform,
+          screen.width,
+          screen.height,
+          screen.colorDepth,
+          Intl.DateTimeFormat().resolvedOptions().timeZone,
+          navigator.hardwareConcurrency || "",
+          navigator.deviceMemory || ""
+        ].join("|");
+
+        let hash = 0;
+        for (let i = 0; i < raw.length; i += 1) {
+          hash = (hash << 5) - hash + raw.charCodeAt(i);
+          hash |= 0;
+        }
+
+        return `device_${Math.abs(hash).toString(16)}_${raw.length}`;
       }
 
       function readData() {
@@ -543,10 +567,12 @@
       }
 
       function updateParticipantLocation() {
+        const deviceId = getAnonId();
         participantLocation.innerHTML = `
           <span>当前参与位置</span>
           <strong>${escapeHtml(currentParticipant.regionLabel)}</strong>
           <em>公网 IP：${escapeHtml(maskEmpty(currentParticipant.ip))}</em>
+          <em>设备：${escapeHtml(deviceId.slice(0, 18))}</em>
         `;
       }
 
@@ -840,7 +866,7 @@
 
       function renderImages(sourceImages) {
         const anonId = getAnonId();
-        const images = [...(sourceImages || [])].sort((a, b) => b.voters.length - a.voters.length || b.createdAt - a.createdAt);
+        const images = [...(sourceImages || [])].sort((a, b) => b.createdAt - a.createdAt);
         currentImages = images;
         gallery.innerHTML = "";
 
@@ -1049,8 +1075,15 @@
       gallery.addEventListener("click", (event) => {
         const button = event.target.closest(".vote-button");
         if (!button) return;
+        const deviceId = getAnonId();
+        const alreadyVotedImage = currentImages.find((item) => Array.isArray(item.voters) && item.voters.includes(deviceId));
 
         if (hasBmobConfig()) {
+          if (alreadyVotedImage && alreadyVotedImage.id !== button.dataset.id) {
+            setMessage("当前设备已经投过票了，一台设备只能投一票。");
+            return;
+          }
+
           button.disabled = true;
           setMessage("正在同步投票...");
           toggleCloudVote(button.dataset.id)
@@ -1067,16 +1100,20 @@
           return;
         }
 
-        const anonId = getAnonId();
         const data = readData();
         const image = data.images.find((item) => item.id === button.dataset.id);
         if (!image) return;
 
-        const index = image.voters.indexOf(anonId);
+        if (alreadyVotedImage && alreadyVotedImage.id !== image.id) {
+          setMessage("当前设备已经投过票了，一台设备只能投一票。");
+          return;
+        }
+
+        const index = image.voters.indexOf(deviceId);
         const key = voterMetaKey();
         image.voterMeta = image.voterMeta || {};
         if (index === -1) {
-          image.voters.push(anonId);
+          image.voters.push(deviceId);
           image.voterMeta[key] = {
             ip: currentParticipant.ip,
             regionLabel: currentParticipant.regionLabel,
