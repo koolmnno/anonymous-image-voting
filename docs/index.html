@@ -96,6 +96,13 @@
         align-items: end;
       }
 
+      .config-form {
+        display: grid;
+        grid-template-columns: minmax(260px, 1fr) auto;
+        gap: 16px;
+        align-items: end;
+      }
+
       label {
         display: grid;
         gap: 8px;
@@ -103,7 +110,8 @@
         font-weight: 700;
       }
 
-      input[type="text"] {
+      input[type="text"],
+      input[type="password"] {
         width: 100%;
         min-height: 48px;
         padding: 0 16px;
@@ -251,7 +259,8 @@
           padding-top: 28px;
         }
 
-        .upload-form {
+        .upload-form,
+        .config-form {
           grid-template-columns: 1fr;
         }
 
@@ -267,8 +276,20 @@
       <section class="hero">
         <p class="eyebrow">GitHub Pages</p>
         <h1>上传图片，匿名投票</h1>
-        <p class="subtitle">这是 GitHub Pages 静态版，不需要服务器，所有图片和投票数据会保存在当前浏览器本地。</p>
-        <p class="notice">注意：GitHub Pages 不提供后端数据库和文件存储，所以不同用户之间不会共享上传图片和投票结果。它适合演示、个人本地使用或静态展示。</p>
+        <p class="subtitle">这是 GitHub Pages + 第三方图床版本。图片上传到 ImgBB 图床，页面保存图片外链和投票数据。</p>
+        <p class="notice">注意：GitHub Pages 没有数据库，所以投票数据仍保存在当前浏览器本地；图片外链可长期展示，但不同用户之间不会自动共享同一份投票结果。</p>
+      </section>
+
+      <section class="panel" style="margin-bottom: 22px">
+        <h2>图床设置</h2>
+        <div class="config-form">
+          <label>
+            ImgBB API Key
+            <input id="apiKeyInput" type="password" placeholder="粘贴你的 ImgBB API Key" />
+          </label>
+          <button id="saveApiKeyButton" type="button">保存图床 Key</button>
+        </div>
+        <p class="message">申请地址：<a href="https://api.imgbb.com/" target="_blank" rel="noopener">https://api.imgbb.com/</a>。Key 只保存在你的浏览器本地，不会上传到 GitHub。</p>
       </section>
 
       <section class="panel">
@@ -281,10 +302,10 @@
 
           <label class="file-drop" for="imageInput">
             <input id="imageInput" type="file" accept="image/*" required />
-            <span id="fileText">点击选择图片，建议小于 2MB</span>
+            <span id="fileText">点击选择图片，建议小于 8MB</span>
           </label>
 
-          <button type="submit">保存到本地展示</button>
+          <button type="submit">上传到图床并展示</button>
         </form>
         <p id="message" class="message" role="status"></p>
       </section>
@@ -292,7 +313,7 @@
       <section class="gallery-header">
         <div>
           <h2>图片展示</h2>
-          <p>按票数排序。数据保存在当前浏览器的 localStorage。</p>
+          <p>图片使用图床外链，投票数据保存在当前浏览器的 localStorage。</p>
         </div>
         <div class="gallery-actions">
           <button id="exportButton" class="secondary" type="button">导出数据</button>
@@ -306,10 +327,13 @@
     <script>
       const STORAGE_KEY = "image_vote_pages_data";
       const ANON_KEY = "image_vote_pages_anon_id";
-      const MAX_FILE_SIZE = 2 * 1024 * 1024;
+      const IMGBB_KEY = "image_vote_imgbb_api_key";
+      const MAX_FILE_SIZE = 8 * 1024 * 1024;
 
       const gallery = document.querySelector("#gallery");
       const uploadForm = document.querySelector("#uploadForm");
+      const apiKeyInput = document.querySelector("#apiKeyInput");
+      const saveApiKeyButton = document.querySelector("#saveApiKeyButton");
       const titleInput = document.querySelector("#titleInput");
       const imageInput = document.querySelector("#imageInput");
       const fileText = document.querySelector("#fileText");
@@ -342,6 +366,21 @@
         message.textContent = text;
       }
 
+      function getApiKey() {
+        return localStorage.getItem(IMGBB_KEY) || "";
+      }
+
+      function saveApiKey() {
+        const value = apiKeyInput.value.trim();
+        if (!value) {
+          localStorage.removeItem(IMGBB_KEY);
+          setMessage("已清除 ImgBB API Key。");
+          return;
+        }
+        localStorage.setItem(IMGBB_KEY, value);
+        setMessage("ImgBB API Key 已保存到当前浏览器。");
+      }
+
       function renderImages() {
         const anonId = getAnonId();
         const data = readData();
@@ -358,7 +397,7 @@
           card.className = "card";
           const voted = image.voters.includes(anonId);
           card.innerHTML = `
-            <img src="${image.dataUrl}" alt="${escapeHtml(image.title)}" loading="lazy" />
+            <img src="${image.url || image.dataUrl}" alt="${escapeHtml(image.title)}" loading="lazy" />
             <div class="card-body">
               <h3 class="card-title">${escapeHtml(image.title)}</h3>
               <div class="vote-row">
@@ -391,17 +430,47 @@
         });
       }
 
+      async function uploadToImgBB(file, apiKey) {
+        const dataUrl = await fileToDataUrl(file);
+        const base64 = dataUrl.split(",")[1];
+        const formData = new FormData();
+        formData.append("image", base64);
+        formData.append("name", file.name.replace(/\.[^.]+$/, "").slice(0, 80) || "image-vote");
+
+        const response = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(apiKey)}`, {
+          method: "POST",
+          body: formData
+        });
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.error?.message || "图床上传失败，请检查 API Key。");
+        }
+
+        return {
+          url: result.data.url,
+          displayUrl: result.data.display_url,
+          deleteUrl: result.data.delete_url
+        };
+      }
+
       imageInput.addEventListener("change", () => {
         const file = imageInput.files[0];
-        fileText.textContent = file ? file.name : "点击选择图片，建议小于 2MB";
+        fileText.textContent = file ? file.name : "点击选择图片，建议小于 8MB";
       });
 
       uploadForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const file = imageInput.files[0];
+        const apiKey = getApiKey();
 
         if (!file) {
           setMessage("请先选择一张图片。");
+          return;
+        }
+
+        if (!apiKey) {
+          setMessage("请先填写并保存 ImgBB API Key。");
           return;
         }
 
@@ -411,24 +480,36 @@
         }
 
         if (file.size > MAX_FILE_SIZE) {
-          setMessage("图片过大。GitHub Pages 静态版使用浏览器本地存储，建议图片小于 2MB。");
+          setMessage("图片过大。当前限制为 8MB。");
           return;
         }
 
-        const dataUrl = await fileToDataUrl(file);
-        const data = readData();
-        data.images.push({
-          id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
-          title: titleInput.value.trim().slice(0, 60) || "未命名图片",
-          dataUrl,
-          createdAt: Date.now(),
-          voters: []
-        });
-        writeData(data);
-        uploadForm.reset();
-        fileText.textContent = "点击选择图片，建议小于 2MB";
-        setMessage("已保存到当前浏览器本地。");
-        renderImages();
+        const submitButton = uploadForm.querySelector("button[type='submit']");
+        submitButton.disabled = true;
+        setMessage("正在上传到 ImgBB 图床...");
+
+        try {
+          const uploadResult = await uploadToImgBB(file, apiKey);
+          const data = readData();
+          data.images.push({
+            id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
+            title: titleInput.value.trim().slice(0, 60) || "未命名图片",
+            url: uploadResult.displayUrl || uploadResult.url,
+            originalUrl: uploadResult.url,
+            deleteUrl: uploadResult.deleteUrl,
+            createdAt: Date.now(),
+            voters: []
+          });
+          writeData(data);
+          uploadForm.reset();
+          fileText.textContent = "点击选择图片，建议小于 8MB";
+          setMessage("图片已上传到图床，并加入展示区。");
+          renderImages();
+        } catch (error) {
+          setMessage(error.message || "图床上传失败。");
+        } finally {
+          submitButton.disabled = false;
+        }
       });
 
       gallery.addEventListener("click", (event) => {
@@ -468,6 +549,8 @@
         renderImages();
       });
 
+      apiKeyInput.value = getApiKey();
+      saveApiKeyButton.addEventListener("click", saveApiKey);
       getAnonId();
       renderImages();
     </script>
