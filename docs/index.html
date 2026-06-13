@@ -352,7 +352,7 @@
             <span id="fileText">点击选择图片，建议小于 8MB</span>
           </label>
 
-          <button type="submit">上传到图床并展示</button>
+          <button type="submit">参与</button>
         </form>
         <p id="message" class="message" role="status"></p>
       </section>
@@ -374,7 +374,7 @@
             <h2 id="settingsTitle">图床与共享数据库设置</h2>
             <p>配置 ImgBB 用于上传图片，配置 Bmob 用于多人共享图片列表和投票结果。</p>
           </div>
-          <button id="closeSettingsButton" class="secondary" type="button">关闭</button>
+          <button id="closeSettingsButton" class="close-button" type="button" aria-label="关闭设置">❌</button>
         </div>
 
         <div class="config-form">
@@ -415,9 +415,30 @@
             <h2 id="leaderboardTitle">排行榜</h2>
             <p>根据当前图片投票数自动排序，票数相同则新上传靠前。</p>
           </div>
-          <button id="closeLeaderboardButton" class="secondary" type="button">关闭</button>
+          <button id="closeLeaderboardButton" class="close-button" type="button" aria-label="关闭排行榜">❌</button>
         </div>
         <div id="leaderboardList" class="leaderboard-list"></div>
+      </div>
+    </section>
+
+    <section id="passwordBackdrop" class="settings-backdrop" aria-hidden="true">
+      <div class="settings-dialog password-dialog" role="dialog" aria-modal="true" aria-labelledby="passwordTitle">
+        <div class="settings-head">
+          <div>
+            <h2 id="passwordTitle">输入设置密码</h2>
+            <p>设置区包含图床和共享数据库密钥，需要验证后才能进入。</p>
+          </div>
+          <button id="closePasswordButton" class="close-button" type="button" aria-label="关闭密码输入">❌</button>
+        </div>
+        <div class="config-form">
+          <label>
+            设置密码
+            <input id="passwordInput" type="password" placeholder="请输入设置密码" />
+          </label>
+        </div>
+        <div class="settings-actions">
+          <button id="unlockSettingsButton" type="button">进入设置</button>
+        </div>
       </div>
     </section>
 
@@ -435,10 +456,14 @@
       const uploadForm = document.querySelector("#uploadForm");
       const settingsBackdrop = document.querySelector("#settingsBackdrop");
       const leaderboardBackdrop = document.querySelector("#leaderboardBackdrop");
+      const passwordBackdrop = document.querySelector("#passwordBackdrop");
       const openSettingsButton = document.querySelector("#openSettingsButton");
       const closeSettingsButton = document.querySelector("#closeSettingsButton");
       const openLeaderboardButton = document.querySelector("#openLeaderboardButton");
       const closeLeaderboardButton = document.querySelector("#closeLeaderboardButton");
+      const closePasswordButton = document.querySelector("#closePasswordButton");
+      const passwordInput = document.querySelector("#passwordInput");
+      const unlockSettingsButton = document.querySelector("#unlockSettingsButton");
       const apiKeyInput = document.querySelector("#apiKeyInput");
       const bmobAppIdInput = document.querySelector("#bmobAppIdInput");
       const bmobRestKeyInput = document.querySelector("#bmobRestKeyInput");
@@ -453,6 +478,7 @@
       const clearButton = document.querySelector("#clearButton");
       const leaderboardList = document.querySelector("#leaderboardList");
       let currentImages = [];
+      let lastSettingsOpenPoint = null;
 
       function getAnonId() {
         let id = localStorage.getItem(ANON_KEY);
@@ -479,35 +505,64 @@
         message.textContent = text;
       }
 
-      function openSettings() {
-        settingsBackdrop.classList.add("open");
-        settingsBackdrop.setAttribute("aria-hidden", "false");
+      function setOpenOrigin(backdrop, event) {
+        const x = event?.clientX ?? window.innerWidth / 2;
+        const y = event?.clientY ?? window.innerHeight / 2;
+        backdrop.style.setProperty("--origin-x", `${(x / window.innerWidth) * 100}%`);
+        backdrop.style.setProperty("--origin-y", `${(y / window.innerHeight) * 100}%`);
+      }
+
+      function openModal(backdrop, event) {
+        setOpenOrigin(backdrop, event);
+        backdrop.classList.add("open");
+        backdrop.setAttribute("aria-hidden", "false");
+      }
+
+      function closeModal(backdrop) {
+        backdrop.classList.remove("open");
+        backdrop.setAttribute("aria-hidden", "true");
+      }
+
+      function openSettings(event) {
+        openModal(settingsBackdrop, event);
         apiKeyInput.focus();
       }
 
-      function requestOpenSettings() {
-        const password = prompt("请输入设置密码");
-        if (password !== SETTINGS_PASSWORD) {
+      function requestOpenSettings(event) {
+        lastSettingsOpenPoint = {
+          clientX: event?.clientX ?? window.innerWidth / 2,
+          clientY: event?.clientY ?? window.innerHeight / 2
+        };
+        openModal(passwordBackdrop, event);
+        passwordInput.value = "";
+        passwordInput.focus();
+      }
+
+      function unlockSettings() {
+        if (passwordInput.value !== SETTINGS_PASSWORD) {
           setMessage("设置密码错误，无法打开设置。");
+          passwordInput.select();
           return;
         }
-        openSettings();
+        closePassword();
+        openSettings(lastSettingsOpenPoint);
       }
 
       function closeSettings() {
-        settingsBackdrop.classList.remove("open");
-        settingsBackdrop.setAttribute("aria-hidden", "true");
+        closeModal(settingsBackdrop);
       }
 
-      function openLeaderboard() {
+      function closePassword() {
+        closeModal(passwordBackdrop);
+      }
+
+      function openLeaderboard(event) {
         renderLeaderboard();
-        leaderboardBackdrop.classList.add("open");
-        leaderboardBackdrop.setAttribute("aria-hidden", "false");
+        openModal(leaderboardBackdrop, event);
       }
 
       function closeLeaderboard() {
-        leaderboardBackdrop.classList.remove("open");
-        leaderboardBackdrop.setAttribute("aria-hidden", "true");
+        closeModal(leaderboardBackdrop);
       }
 
       function getApiKey() {
@@ -894,20 +949,13 @@
       closeSettingsButton.addEventListener("click", closeSettings);
       openLeaderboardButton.addEventListener("click", openLeaderboard);
       closeLeaderboardButton.addEventListener("click", closeLeaderboard);
+      closePasswordButton.addEventListener("click", closePassword);
+      unlockSettingsButton.addEventListener("click", unlockSettings);
+      passwordInput.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") unlockSettings();
+      });
       clearConfigButton.addEventListener("click", clearConfig);
       saveConfigButton.addEventListener("click", saveConfig);
-      settingsBackdrop.addEventListener("click", (event) => {
-        if (event.target === settingsBackdrop) closeSettings();
-      });
-      leaderboardBackdrop.addEventListener("click", (event) => {
-        if (event.target === leaderboardBackdrop) closeLeaderboard();
-      });
-      document.addEventListener("keydown", (event) => {
-        if (event.key === "Escape") {
-          closeSettings();
-          closeLeaderboard();
-        }
-      });
       getAnonId();
       loadImages();
     </script>
