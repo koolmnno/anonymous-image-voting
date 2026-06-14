@@ -335,7 +335,7 @@
   <body>
     <main class="page">
       <div class="top-bar">
-        <button id="openRegisterButton" class="secondary" type="button">邮箱注册</button>
+        <button id="openRegisterButton" class="secondary" type="button">手机注册</button>
         <button id="openLeaderboardButton" class="secondary" type="button">排行榜</button>
         <button id="openSettingsButton" class="secondary" type="button">设置</button>
       </div>
@@ -392,25 +392,12 @@
             Bmob REST API Key
             <input id="bmobRestKeyInput" type="password" placeholder="粘贴 Bmob REST API Key" />
           </label>
-          <label>
-            EmailJS Service ID
-            <input id="emailjsServiceInput" type="password" placeholder="粘贴 EmailJS Service ID" />
-          </label>
-          <label>
-            EmailJS Template ID
-            <input id="emailjsTemplateInput" type="password" placeholder="粘贴 EmailJS Template ID" />
-          </label>
-          <label>
-            EmailJS Public Key
-            <input id="emailjsPublicKeyInput" type="password" placeholder="粘贴 EmailJS Public Key" />
-          </label>
         </div>
 
         <p class="setting-help">
           <strong id="modeText">正在检测数据模式...</strong><br />
           ImgBB 申请地址：<a href="https://api.imgbb.com/" target="_blank" rel="noopener">https://api.imgbb.com/</a>。
           Bmob 创建应用后，在“应用密钥”里复制 Application ID 和 REST API Key。
-          EmailJS 模板需要包含变量 <code>to_email</code> 和 <code>code</code>。
           这些配置只保存在当前浏览器。
         </p>
 
@@ -462,23 +449,23 @@
       <div class="settings-dialog password-dialog" role="dialog" aria-modal="true" aria-labelledby="registerTitle">
         <div class="settings-head">
           <div>
-            <h2 id="registerTitle">QQ 邮箱注册</h2>
-            <p>仅支持 QQ 邮箱注册，注册后才能参与上传和投票。</p>
+            <h2 id="registerTitle">手机号注册</h2>
+            <p>使用 Bmob 短信验证码注册，注册后才能参与上传和投票。</p>
           </div>
-          <button id="closeRegisterButton" class="close-button" type="button" aria-label="关闭邮箱注册">×</button>
+          <button id="closeRegisterButton" class="close-button" type="button" aria-label="关闭手机注册">×</button>
         </div>
         <div class="config-form">
           <label>
-            QQ 邮箱
-            <input id="registerEmailInput" type="email" inputmode="email" placeholder="例如：123456@qq.com" />
+            手机号
+            <input id="registerPhoneInput" type="tel" inputmode="tel" placeholder="例如：13800138000" />
           </label>
           <label>
-            邮箱验证码
+            短信验证码
             <input id="registerCodeInput" type="text" inputmode="numeric" maxlength="6" placeholder="请输入 6 位验证码" />
           </label>
         </div>
         <div class="settings-actions">
-          <button id="sendEmailCodeButton" class="secondary" type="button">发送验证码</button>
+          <button id="sendSmsCodeButton" class="secondary" type="button">发送验证码</button>
           <button id="saveRegisterButton" type="button">验证并注册</button>
         </div>
       </div>
@@ -488,18 +475,15 @@
       const STORAGE_KEY = "image_vote_pages_data";
       const ANON_KEY = "image_vote_pages_anon_id";
       const DEVICE_KEY = "image_vote_device_id";
-      const REGISTERED_EMAIL_KEY = "image_vote_registered_email";
+      const REGISTERED_PHONE_KEY = "image_vote_registered_phone";
       const GEO_CACHE_KEY = "image_vote_geo_cache";
       const IMGBB_KEY = "image_vote_imgbb_api_key";
       const BMOB_APP_ID_KEY = "image_vote_bmob_app_id";
       const BMOB_REST_KEY_KEY = "image_vote_bmob_rest_key";
-      const EMAILJS_SERVICE_KEY = "image_vote_emailjs_service_id";
-      const EMAILJS_TEMPLATE_KEY = "image_vote_emailjs_template_id";
-      const EMAILJS_PUBLIC_KEY = "image_vote_emailjs_public_key";
-      const EMAIL_VERIFY_CACHE_KEY = "image_vote_email_verify_cache";
       const BMOB_CLASS_URL = "https://api2.bmob.cn/1/classes/ImageVoteImage";
-      const BMOB_USER_CLASS_URL = "https://api2.bmob.cn/1/classes/EmailVoteUser";
-      const BMOB_VERIFY_CLASS_URL = "https://api2.bmob.cn/1/classes/EmailVerifyCode";
+      const BMOB_USER_CLASS_URL = "https://api2.bmob.cn/1/classes/PhoneVoteUser";
+      const BMOB_SMS_REQUEST_URL = "https://api2.bmob.cn/1/requestSmsCode";
+      const BMOB_SMS_VERIFY_URL = "https://api2.bmob.cn/1/verifySmsCode";
       const SETTINGS_PASSWORD = "zy78054054";
       const MAX_FILE_SIZE = 8 * 1024 * 1024;
 
@@ -518,16 +502,13 @@
       const closeRegisterButton = document.querySelector("#closeRegisterButton");
       const passwordInput = document.querySelector("#passwordInput");
       const unlockSettingsButton = document.querySelector("#unlockSettingsButton");
-      const registerEmailInput = document.querySelector("#registerEmailInput");
+      const registerPhoneInput = document.querySelector("#registerPhoneInput");
       const registerCodeInput = document.querySelector("#registerCodeInput");
-      const sendEmailCodeButton = document.querySelector("#sendEmailCodeButton");
+      const sendSmsCodeButton = document.querySelector("#sendSmsCodeButton");
       const saveRegisterButton = document.querySelector("#saveRegisterButton");
       const apiKeyInput = document.querySelector("#apiKeyInput");
       const bmobAppIdInput = document.querySelector("#bmobAppIdInput");
       const bmobRestKeyInput = document.querySelector("#bmobRestKeyInput");
-      const emailjsServiceInput = document.querySelector("#emailjsServiceInput");
-      const emailjsTemplateInput = document.querySelector("#emailjsTemplateInput");
-      const emailjsPublicKeyInput = document.querySelector("#emailjsPublicKeyInput");
       const saveConfigButton = document.querySelector("#saveConfigButton");
       const clearConfigButton = document.querySelector("#clearConfigButton");
       const titleInput = document.querySelector("#titleInput");
@@ -557,30 +538,32 @@
         return id;
       }
 
-      function getRegisteredEmail() {
-        return (localStorage.getItem(REGISTERED_EMAIL_KEY) || "").trim().toLowerCase();
+      function getRegisteredPhone() {
+        return (localStorage.getItem(REGISTERED_PHONE_KEY) || "").trim();
       }
 
       function getVoterId() {
-        const email = getRegisteredEmail();
-        return email ? `email_${hashText(email)}` : getAnonId();
+        const phone = getRegisteredPhone();
+        return phone ? `phone_${hashText(phone)}` : getAnonId();
       }
 
-      function isQQEmail(email) {
-        return /^[1-9][0-9]{4,11}@qq\.com$/i.test(String(email || "").trim());
+      function normalizePhone(phone) {
+        return String(phone || "").replace(/\D/g, "");
       }
 
-      function maskEmail(email) {
-        const [name, domain] = String(email || "").split("@");
-        if (!name || !domain) return "未注册";
-        const head = name.slice(0, 2);
-        const tail = name.length > 4 ? name.slice(-2) : "";
-        return `${head}${"*".repeat(Math.max(2, name.length - head.length - tail.length))}${tail}@${domain}`;
+      function isMobilePhone(phone) {
+        return /^1[3-9]\d{9}$/.test(normalizePhone(phone));
+      }
+
+      function maskPhone(phone) {
+        const value = normalizePhone(phone);
+        if (!value) return "未注册";
+        return `${value.slice(0, 3)}****${value.slice(-4)}`;
       }
 
       function requireRegistered(event) {
-        if (getRegisteredEmail()) return true;
-        setMessage("请先使用 QQ 邮箱注册后再参与。");
+        if (getRegisteredPhone()) return true;
+        setMessage("请先使用手机号验证码注册后再参与。");
         openRegister(event);
         return false;
       }
@@ -811,7 +794,7 @@
           <span>当前参与位置</span>
           <strong>${escapeHtml(currentParticipant.regionLabel)}</strong>
           <em>设备：${escapeHtml(deviceId.slice(0, 18))}</em>
-          <em>邮箱：${escapeHtml(maskEmail(getRegisteredEmail()))}</em>
+          <em>手机：${escapeHtml(maskPhone(getRegisteredPhone()))}</em>
         `;
       }
 
@@ -913,8 +896,8 @@
 
       function openRegister(event) {
         openModal(registerBackdrop, event);
-        registerEmailInput.value = getRegisteredEmail();
-        registerEmailInput.focus();
+        registerPhoneInput.value = getRegisteredPhone();
+        registerPhoneInput.focus();
       }
 
       function closeRegister() {
@@ -946,138 +929,59 @@
         return Boolean(config.appId && config.restKey);
       }
 
-      function getEmailConfig() {
-        return {
-          serviceId: localStorage.getItem(EMAILJS_SERVICE_KEY) || "",
-          templateId: localStorage.getItem(EMAILJS_TEMPLATE_KEY) || "",
-          publicKey: localStorage.getItem(EMAILJS_PUBLIC_KEY) || ""
-        };
-      }
+      async function sendSmsCode() {
+        const phone = normalizePhone(registerPhoneInput.value);
 
-      function hasEmailConfig() {
-        const config = getEmailConfig();
-        return Boolean(config.serviceId && config.templateId && config.publicKey);
-      }
-
-      function createEmailCode() {
-        return String(Math.floor(100000 + Math.random() * 900000));
-      }
-
-      async function saveVerifyCode(email, code) {
-        const record = {
-          email,
-          codeHash: hashText(`${email}:${code}`),
-          expiresAt: Date.now() + 10 * 60 * 1000,
-          used: false,
-          createdAtMs: Date.now()
-        };
-
-        localStorage.setItem(EMAIL_VERIFY_CACHE_KEY, JSON.stringify(record));
-
-        if (hasBmobConfig()) {
-          await bmobRequest(BMOB_VERIFY_CLASS_URL, {
-            method: "POST",
-            body: JSON.stringify(record)
-          });
-        }
-      }
-
-      async function getLatestVerifyRecord(email) {
-        if (hasBmobConfig()) {
-          const where = encodeURIComponent(JSON.stringify({ email, used: false }));
-          const result = await bmobRequest(`${BMOB_VERIFY_CLASS_URL}?where=${where}&order=-createdAt&limit=1`);
-          return result.results && result.results[0];
-        }
-
-        return JSON.parse(localStorage.getItem(EMAIL_VERIFY_CACHE_KEY) || "null");
-      }
-
-      async function markVerifyCodeUsed(record) {
-        localStorage.removeItem(EMAIL_VERIFY_CACHE_KEY);
-        if (hasBmobConfig() && record.objectId) {
-          await bmobRequest(`${BMOB_VERIFY_CLASS_URL}/${record.objectId}`, {
-            method: "PUT",
-            body: JSON.stringify({ used: true, usedAtMs: Date.now() })
-          });
-        }
-      }
-
-      async function sendEmailCode() {
-        const email = registerEmailInput.value.trim().toLowerCase();
-
-        if (!isQQEmail(email)) {
-          setMessage("邮箱格式不正确，仅支持 QQ 邮箱，例如：123456@qq.com。");
-          registerEmailInput.select();
+        if (!isMobilePhone(phone)) {
+          setMessage("手机号格式不正确，请输入中国大陆 11 位手机号。");
+          registerPhoneInput.select();
           return;
         }
 
-        if (!hasEmailConfig()) {
-          setMessage("请先在设置里填写 EmailJS Service ID、Template ID 和 Public Key。");
+        if (!hasBmobConfig()) {
+          setMessage("请先在设置里填写 Bmob Application ID 和 REST API Key。");
           return;
         }
 
-        const code = createEmailCode();
-        const emailConfig = getEmailConfig();
-        sendEmailCodeButton.disabled = true;
-        setMessage("正在发送邮箱验证码...");
+        sendSmsCodeButton.disabled = true;
+        setMessage("正在发送短信验证码...");
 
         try {
-          await saveVerifyCode(email, code);
-          const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+          await bmobRequest(BMOB_SMS_REQUEST_URL, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
             body: JSON.stringify({
-              service_id: emailConfig.serviceId,
-              template_id: emailConfig.templateId,
-              user_id: emailConfig.publicKey,
-              template_params: {
-                to_email: email,
-                code,
-                app_name: "匿名图片投票"
-              }
+              mobilePhoneNumber: phone
             })
           });
-
-          if (!response.ok) {
-            throw new Error("邮件发送失败，请检查 EmailJS 配置和模板变量。");
-          }
-
-          setMessage("验证码已发送到 QQ 邮箱，10 分钟内有效。");
+          setMessage("短信验证码已发送，通常 5 分钟内有效。");
         } catch (error) {
-          setMessage(error.message || "验证码发送失败。");
+          setMessage(error.message || "短信验证码发送失败。");
         } finally {
-          sendEmailCodeButton.disabled = false;
+          sendSmsCodeButton.disabled = false;
         }
       }
 
-      async function verifyEmailCode(email, code) {
-        const record = await getLatestVerifyRecord(email);
-
-        if (!record) {
-          throw new Error("请先发送验证码。");
+      async function verifySmsCode(phone, code) {
+        if (!hasBmobConfig()) {
+          throw new Error("请先配置 Bmob，短信验证码必须通过 Bmob 校验。");
         }
 
-        if (Date.now() > Number(record.expiresAt || 0)) {
-          throw new Error("验证码已过期，请重新发送。");
-        }
-
-        if (record.codeHash !== hashText(`${email}:${code}`)) {
-          throw new Error("验证码错误。");
-        }
-
-        await markVerifyCodeUsed(record);
+        await bmobRequest(`${BMOB_SMS_VERIFY_URL}/${encodeURIComponent(code)}`, {
+          method: "POST",
+          body: JSON.stringify({
+            mobilePhoneNumber: phone
+          })
+        });
       }
 
-      async function syncRegisteredEmail(email) {
+      async function syncRegisteredPhone(phone) {
         if (!hasBmobConfig()) return;
 
-        const safeEmail = email.toLowerCase();
-        const where = encodeURIComponent(JSON.stringify({ email: safeEmail }));
+        const safePhone = normalizePhone(phone);
+        const where = encodeURIComponent(JSON.stringify({ phone: safePhone }));
         const existing = await bmobRequest(`${BMOB_USER_CLASS_URL}?where=${where}&limit=1`);
         const payload = {
-          email: safeEmail,
+          phone: safePhone,
           voterId: getVoterId(),
           deviceId: getAnonId(),
           regionLabel: currentParticipant.regionLabel,
@@ -1101,32 +1005,33 @@
       }
 
       async function saveRegistration() {
-        const email = registerEmailInput.value.trim().toLowerCase();
+        const phone = normalizePhone(registerPhoneInput.value);
         const code = registerCodeInput.value.trim();
-        if (!isQQEmail(email)) {
-          setMessage("邮箱格式不正确，仅支持 QQ 邮箱，例如：123456@qq.com。");
-          registerEmailInput.select();
+
+        if (!isMobilePhone(phone)) {
+          setMessage("手机号格式不正确，请输入中国大陆 11 位手机号。");
+          registerPhoneInput.select();
           return;
         }
 
         if (!/^\d{6}$/.test(code)) {
-          setMessage("请输入 6 位邮箱验证码。");
+          setMessage("请输入 6 位短信验证码。");
           registerCodeInput.select();
           return;
         }
 
         try {
-          await verifyEmailCode(email, code);
+          await verifySmsCode(phone, code);
         } catch (error) {
           setMessage(error.message || "验证码验证失败。");
           return;
         }
 
-        localStorage.setItem(REGISTERED_EMAIL_KEY, email);
+        localStorage.setItem(REGISTERED_PHONE_KEY, phone);
 
         try {
-          await syncRegisteredEmail(email);
-          setMessage("QQ 邮箱注册成功，现在可以参与上传和投票。");
+          await syncRegisteredPhone(phone);
+          setMessage("手机号注册成功，现在可以参与上传和投票。");
         } catch (error) {
           setMessage(`本地注册成功，但云端同步失败：${error.message || "请检查 Bmob 配置"}`);
         }
@@ -1139,9 +1044,6 @@
         const imgbbKey = apiKeyInput.value.trim();
         const bmobAppId = bmobAppIdInput.value.trim();
         const bmobRestKey = bmobRestKeyInput.value.trim();
-        const emailjsService = emailjsServiceInput.value.trim();
-        const emailjsTemplate = emailjsTemplateInput.value.trim();
-        const emailjsPublicKey = emailjsPublicKeyInput.value.trim();
 
         if (!imgbbKey) {
           localStorage.removeItem(IMGBB_KEY);
@@ -1157,16 +1059,6 @@
           localStorage.setItem(BMOB_REST_KEY_KEY, bmobRestKey);
         }
 
-        if (!emailjsService || !emailjsTemplate || !emailjsPublicKey) {
-          localStorage.removeItem(EMAILJS_SERVICE_KEY);
-          localStorage.removeItem(EMAILJS_TEMPLATE_KEY);
-          localStorage.removeItem(EMAILJS_PUBLIC_KEY);
-        } else {
-          localStorage.setItem(EMAILJS_SERVICE_KEY, emailjsService);
-          localStorage.setItem(EMAILJS_TEMPLATE_KEY, emailjsTemplate);
-          localStorage.setItem(EMAILJS_PUBLIC_KEY, emailjsPublicKey);
-        }
-
         setMessage(hasBmobConfig() ? "配置已保存：当前使用 Bmob 云端共享模式。" : "配置已保存：当前使用浏览器本地模式。");
         closeSettings();
         updateModeText();
@@ -1178,15 +1070,9 @@
         localStorage.removeItem(IMGBB_KEY);
         localStorage.removeItem(BMOB_APP_ID_KEY);
         localStorage.removeItem(BMOB_REST_KEY_KEY);
-        localStorage.removeItem(EMAILJS_SERVICE_KEY);
-        localStorage.removeItem(EMAILJS_TEMPLATE_KEY);
-        localStorage.removeItem(EMAILJS_PUBLIC_KEY);
         apiKeyInput.value = "";
         bmobAppIdInput.value = "";
         bmobRestKeyInput.value = "";
-        emailjsServiceInput.value = "";
-        emailjsTemplateInput.value = "";
-        emailjsPublicKeyInput.value = "";
         setMessage("配置已清除，当前使用浏览器本地模式。");
         closeSettings();
         updateModeText();
@@ -1538,7 +1424,7 @@
 
         if (hasBmobConfig()) {
           if (alreadyVotedImage && alreadyVotedImage.id !== button.dataset.id) {
-            setMessage("当前 QQ 邮箱已经投过票了，一个 QQ 邮箱只能投一票。");
+            setMessage("当前手机号已经投过票了，一个手机号只能投一票。");
             return;
           }
 
@@ -1563,7 +1449,7 @@
         if (!image) return;
 
         if (alreadyVotedImage && alreadyVotedImage.id !== image.id) {
-          setMessage("当前 QQ 邮箱已经投过票了，一个 QQ 邮箱只能投一票。");
+          setMessage("当前手机号已经投过票了，一个手机号只能投一票。");
           return;
         }
 
@@ -1618,15 +1504,12 @@
       apiKeyInput.value = getApiKey();
       bmobAppIdInput.value = getBmobConfig().appId;
       bmobRestKeyInput.value = getBmobConfig().restKey;
-      emailjsServiceInput.value = getEmailConfig().serviceId;
-      emailjsTemplateInput.value = getEmailConfig().templateId;
-      emailjsPublicKeyInput.value = getEmailConfig().publicKey;
-      registerEmailInput.value = getRegisteredEmail();
+      registerPhoneInput.value = getRegisteredPhone();
       openRegisterButton.addEventListener("click", openRegister);
       closeRegisterButton.addEventListener("click", closeRegister);
-      sendEmailCodeButton.addEventListener("click", sendEmailCode);
+      sendSmsCodeButton.addEventListener("click", sendSmsCode);
       saveRegisterButton.addEventListener("click", saveRegistration);
-      registerEmailInput.addEventListener("keydown", (event) => {
+      registerPhoneInput.addEventListener("keydown", (event) => {
         if (event.key === "Enter") saveRegistration();
       });
       registerCodeInput.addEventListener("keydown", (event) => {
