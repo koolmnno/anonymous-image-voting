@@ -478,6 +478,7 @@
       const REGISTERED_PHONE_KEY = "image_vote_registered_phone";
       const GEO_CACHE_KEY = "image_vote_geo_cache";
       const IMGBB_KEY = "image_vote_imgbb_api_key";
+      const DEFAULT_IMGBB_API_KEY = "b86ed66c57c143c0d656c271823c8924";
       const BMOB_APP_ID_KEY = "image_vote_bmob_app_id";
       const BMOB_REST_KEY_KEY = "image_vote_bmob_rest_key";
       const DEFAULT_BMOB_APP_ID = "b469ff2379116f3576be24f1d89450a8";
@@ -916,7 +917,7 @@
       }
 
       function getApiKey() {
-        return localStorage.getItem(IMGBB_KEY) || "";
+        return localStorage.getItem(IMGBB_KEY) || DEFAULT_IMGBB_API_KEY;
       }
 
       function getBmobConfig() {
@@ -1072,7 +1073,7 @@
         localStorage.removeItem(IMGBB_KEY);
         localStorage.removeItem(BMOB_APP_ID_KEY);
         localStorage.removeItem(BMOB_REST_KEY_KEY);
-        apiKeyInput.value = "";
+        apiKeyInput.value = DEFAULT_IMGBB_API_KEY;
         bmobAppIdInput.value = DEFAULT_BMOB_APP_ID;
         bmobRestKeyInput.value = DEFAULT_BMOB_REST_KEY;
         setMessage("配置已清除，当前使用浏览器本地模式。");
