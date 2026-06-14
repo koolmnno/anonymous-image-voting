@@ -535,10 +535,22 @@
       };
 
       function getAnonId() {
-        const id = getDeviceFingerprint();
+        const id = getNativeDeviceId() || getDeviceFingerprint();
         localStorage.setItem(DEVICE_KEY, id);
         localStorage.setItem(ANON_KEY, id);
         return id;
+      }
+
+      function getNativeDeviceId() {
+        try {
+          if (window.AndroidDevice && typeof window.AndroidDevice.getDeviceId === "function") {
+            const nativeId = String(window.AndroidDevice.getDeviceId() || "").trim();
+            if (nativeId) return nativeId;
+          }
+        } catch {
+          // 非 APK 环境或原生桥不可用时使用网页设备指纹
+        }
+        return "";
       }
 
       function getRegisteredPhone() {
