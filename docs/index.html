@@ -480,6 +480,8 @@
       const IMGBB_KEY = "image_vote_imgbb_api_key";
       const BMOB_APP_ID_KEY = "image_vote_bmob_app_id";
       const BMOB_REST_KEY_KEY = "image_vote_bmob_rest_key";
+      const DEFAULT_BMOB_APP_ID = "b469ff2379116f3576be24f1d89450a8";
+      const DEFAULT_BMOB_REST_KEY = "091de0242f605e5ff95e551416b06ad1";
       const BMOB_CLASS_URL = "https://api2.bmob.cn/1/classes/ImageVoteImage";
       const BMOB_USER_CLASS_URL = "https://api2.bmob.cn/1/classes/PhoneVoteUser";
       const BMOB_SMS_REQUEST_URL = "https://api2.bmob.cn/1/requestSmsCode";
@@ -919,8 +921,8 @@
 
       function getBmobConfig() {
         return {
-          appId: localStorage.getItem(BMOB_APP_ID_KEY) || "",
-          restKey: localStorage.getItem(BMOB_REST_KEY_KEY) || ""
+          appId: localStorage.getItem(BMOB_APP_ID_KEY) || DEFAULT_BMOB_APP_ID,
+          restKey: localStorage.getItem(BMOB_REST_KEY_KEY) || DEFAULT_BMOB_REST_KEY
         };
       }
 
@@ -1071,8 +1073,8 @@
         localStorage.removeItem(BMOB_APP_ID_KEY);
         localStorage.removeItem(BMOB_REST_KEY_KEY);
         apiKeyInput.value = "";
-        bmobAppIdInput.value = "";
-        bmobRestKeyInput.value = "";
+        bmobAppIdInput.value = DEFAULT_BMOB_APP_ID;
+        bmobRestKeyInput.value = DEFAULT_BMOB_REST_KEY;
         setMessage("配置已清除，当前使用浏览器本地模式。");
         closeSettings();
         updateModeText();
